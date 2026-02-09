@@ -1,6 +1,5 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useMemo } from 'react';
 import { useColorScheme } from 'react-native';
-import type { AppThemeMode } from '@/types/settings';
 import { Colors } from '@/constants/theme';
 
 type ColorScheme = 'light' | 'dark';
@@ -21,12 +20,8 @@ type ColorPalette = {
 };
 
 interface ThemeContextValue {
-  /** Resolved color scheme (never 'auto') */
+  /** Resolved color scheme — always follows the system */
   colorScheme: ColorScheme;
-  /** User's theme preference */
-  themeMode: AppThemeMode;
-  /** Set the theme preference */
-  setThemeMode: (mode: AppThemeMode) => void;
   /** Color palette for the current scheme */
   colors: ColorPalette;
   /** Whether dark mode is active */
@@ -37,21 +32,13 @@ const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const systemScheme = useColorScheme();
-  const [themeMode, setThemeMode] = useState<AppThemeMode>('auto');
-
-  const colorScheme: ColorScheme = useMemo(() => {
-    if (themeMode === 'auto') {
-      return systemScheme === 'dark' ? 'dark' : 'light';
-    }
-    return themeMode;
-  }, [themeMode, systemScheme]);
-
+  const colorScheme: ColorScheme = systemScheme === 'dark' ? 'dark' : 'light';
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDark = colorScheme === 'dark';
 
   const value = useMemo(
-    () => ({ colorScheme, themeMode, setThemeMode, colors, isDark }),
-    [colorScheme, themeMode, colors, isDark]
+    () => ({ colorScheme, colors, isDark }),
+    [colorScheme, colors, isDark]
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

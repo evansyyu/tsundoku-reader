@@ -2,8 +2,6 @@
  * Settings and theme type definitions.
  */
 
-export type AppThemeMode = 'light' | 'dark' | 'auto';
-
 export type ViewMode = 'paginated' | 'continuous';
 
 export interface ReadingTheme {
@@ -31,8 +29,6 @@ export interface ReadingSettings {
 }
 
 export interface AppSettings {
-  /** App-wide theme mode */
-  themeMode: AppThemeMode;
   /** Reading-specific settings */
   reading: ReadingSettings;
   /** User-created custom reading themes */

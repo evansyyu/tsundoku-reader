@@ -1,12 +1,12 @@
-import React, { memo, useState } from 'react';
+import React, { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import type { Book } from '@/types/book';
 import { Spacing } from '@/constants/layout';
 import Slider from '@/components/Slider';
-import ChapterListModal from '@/components/ChapterListModal';
 
 interface ReaderControlsProps {
   visible: boolean;
@@ -36,7 +36,7 @@ function ReaderControls({
   onSelectChapter,
 }: ReaderControlsProps) {
   const insets = useSafeAreaInsets();
-  const [chapterListVisible, setChapterListVisible] = useState(false);
+  const router = useRouter();
 
   if (!visible) return null;
 
@@ -46,6 +46,7 @@ function ReaderControls({
   return (
     <>
       <Animated.View
+        // StyleSheet kept: absoluteFillObject spread for Reanimated
         style={styles.overlay}
         entering={FadeIn.duration(200)}
         exiting={FadeOut.duration(200)}
@@ -53,49 +54,45 @@ function ReaderControls({
         {/* Tappable backdrop to dismiss */}
         <Pressable style={StyleSheet.absoluteFill} onPress={onDismiss} />
 
-        {/* Top bar */}
+        {/* Top bar - StyleSheet kept: paddingTop is dynamic safe area inset */}
         <View
-          style={[
-            styles.topBar,
-            { paddingTop: insets.top + Spacing.xs },
-          ]}
+          className="flex-row items-center px-md pb-sm bg-black/70"
+          style={{ paddingTop: insets.top + Spacing.xs }}
         >
           <Pressable
-            style={styles.iconButton}
+            className="w-9 h-9 justify-center items-center"
             onPress={onBack}
             hitSlop={12}
           >
             <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
           </Pressable>
 
-          <View style={styles.titleContainer}>
-            <Text style={styles.titleText} numberOfLines={1}>
+          <View className="flex-1 items-center px-xs">
+            <Text className="text-white text-base font-semibold" numberOfLines={1}>
               {book.title}
             </Text>
-            <Text style={styles.chapterText} numberOfLines={1}>
+            <Text className="text-white/70 text-xs mt-0.5" numberOfLines={1}>
               {chapterTitle}
             </Text>
           </View>
 
           {/* Chapter list button */}
           <Pressable
-            style={styles.iconButton}
-            onPress={() => setChapterListVisible(true)}
+            className="w-9 h-9 justify-center items-center"
+            onPress={() => router.push(`/chapters/${book.id}?chapter=${chapterIndex}`)}
             hitSlop={12}
           >
             <Ionicons name="list" size={22} color="#FFFFFF" />
           </Pressable>
         </View>
 
-        {/* Bottom bar */}
+        {/* Bottom bar - StyleSheet kept: paddingBottom is dynamic safe area inset */}
         <View
-          style={[
-            styles.bottomBar,
-            { paddingBottom: insets.bottom + Spacing.sm },
-          ]}
+          className="px-lg pt-md bg-black/70"
+          style={{ paddingBottom: insets.bottom + Spacing.sm }}
         >
-          <View style={styles.progressRow}>
-            <Text style={styles.pageText}>
+          <View className="flex-row items-center gap-sm">
+            <Text className="text-white text-[13px] font-medium min-w-[28px] text-center">
               {currentPage + 1}
             </Text>
             <Slider
@@ -106,95 +103,29 @@ function ReaderControls({
               onValueChange={onGoToPage}
               tintColor="#FFFFFF"
               trackColor="rgba(255,255,255,0.3)"
-              style={styles.slider}
+              style={{ flex: 1 }}
               disabled={totalPages <= 1}
             />
-            <Text style={styles.pageText}>
+            <Text className="text-white text-[13px] font-medium min-w-[28px] text-center">
               {totalPages}
             </Text>
           </View>
-          <Text style={styles.chapterCountText}>
+          <Text className="text-white/60 text-[11px] text-center mt-xs mb-xs">
             Chapter {chapterIndex + 1} of {book.spine.length}
           </Text>
         </View>
       </Animated.View>
-
-      {/* Chapter list modal */}
-      <ChapterListModal
-        visible={chapterListVisible}
-        spine={book.spine}
-        currentChapterIndex={chapterIndex}
-        onSelectChapter={(idx) => {
-          setChapterListVisible(false);
-          onSelectChapter(idx);
-        }}
-        onClose={() => setChapterListVisible(false)}
-      />
     </>
   );
 }
 
 export default memo(ReaderControls);
 
+// StyleSheet kept: absoluteFillObject spread for Reanimated animated view
 const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'space-between',
     zIndex: 20,
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.md,
-    paddingBottom: Spacing.sm,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-  },
-  iconButton: {
-    width: 36,
-    height: 36,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  titleContainer: {
-    flex: 1,
-    alignItems: 'center',
-    paddingHorizontal: Spacing.xs,
-  },
-  titleText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  chapterText: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  bottomBar: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-  },
-  progressRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  slider: {
-    flex: 1,
-  },
-  pageText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '500',
-    minWidth: 28,
-    textAlign: 'center',
-  },
-  chapterCountText: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 11,
-    textAlign: 'center',
-    marginTop: Spacing.xs,
-    marginBottom: Spacing.xs,
   },
 });

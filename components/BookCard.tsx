@@ -1,8 +1,7 @@
 import React, { memo, useCallback } from 'react';
 import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useTheme } from '@/contexts/ThemeContext';
 import type { Book } from '@/types/book';
-import { BOOK_CARD_WIDTH, BOOK_COVER_HEIGHT, BorderRadius, Spacing } from '@/constants/layout';
+import { BOOK_COVER_ASPECT_RATIO } from '@/constants/layout';
 
 interface BookCardProps {
   book: Book;
@@ -11,8 +10,6 @@ interface BookCardProps {
 }
 
 function BookCard({ book, onPress, onDelete }: BookCardProps) {
-  const { colors } = useTheme();
-
   const handleLongPress = useCallback(() => {
     Alert.alert(
       'Remove Book',
@@ -30,26 +27,26 @@ function BookCard({ book, onPress, onDelete }: BookCardProps) {
 
   return (
     <Pressable
-      style={({ pressed }) => [
-        styles.container,
-        pressed && styles.pressed,
-      ]}
+      style={({ pressed }) => pressed && styles.pressed}
       onPress={onPress}
       onLongPress={handleLongPress}
       delayLongPress={500}
     >
-      <View style={[styles.coverContainer, { backgroundColor: colors.surface }]}>
+      <View
+        className="w-full rounded-app-md overflow-hidden mb-xs bg-surface dark:bg-surface-dark"
+        style={{ aspectRatio: 1 / BOOK_COVER_ASPECT_RATIO }}
+      >
         {book.coverPath ? (
           <Image
             source={{ uri: book.coverPath }}
-            style={styles.coverImage}
+            className="w-full h-full"
             resizeMode="cover"
           />
         ) : (
-          <View style={[styles.placeholderCover, { backgroundColor: colors.surfaceSecondary }]}>
-            <Text style={styles.placeholderEmoji}>📖</Text>
+          <View className="flex-1 justify-center items-center p-sm bg-surface-secondary dark:bg-surface-dark-secondary">
+            <Text className="text-[32px] mb-xs">📖</Text>
             <Text
-              style={[styles.placeholderTitle, { color: colors.textSecondary }]}
+              className="text-[11px] text-center font-medium text-text-secondary dark:text-text-secondary-dark"
               numberOfLines={3}
             >
               {book.title}
@@ -59,18 +56,18 @@ function BookCard({ book, onPress, onDelete }: BookCardProps) {
 
         {/* Reading progress indicator */}
         {book.lastReadAt && (
-          <View style={[styles.progressDot, { backgroundColor: colors.tint }]} />
+          <View className="absolute bottom-1.5 right-1.5 w-2 h-2 rounded-full bg-tint dark:bg-tint-dark" />
         )}
       </View>
 
       <Text
-        style={[styles.title, { color: colors.text }]}
+        className="text-[13px] font-semibold leading-[17px] text-black dark:text-white"
         numberOfLines={2}
       >
         {book.title}
       </Text>
       <Text
-        style={[styles.author, { color: colors.textSecondary }]}
+        className="text-[11px] mt-0.5 text-text-secondary dark:text-text-secondary-dark"
         numberOfLines={1}
       >
         {book.author || 'Unknown Author'}
@@ -82,54 +79,8 @@ function BookCard({ book, onPress, onDelete }: BookCardProps) {
 export default memo(BookCard);
 
 const styles = StyleSheet.create({
-  container: {
-    width: BOOK_CARD_WIDTH,
-  },
   pressed: {
     opacity: 0.7,
     transform: [{ scale: 0.97 }],
-  },
-  coverContainer: {
-    width: '100%',
-    height: BOOK_COVER_HEIGHT,
-    borderRadius: BorderRadius.md,
-    overflow: 'hidden',
-    marginBottom: Spacing.xs,
-  },
-  coverImage: {
-    width: '100%',
-    height: '100%',
-  },
-  placeholderCover: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: Spacing.sm,
-  },
-  placeholderEmoji: {
-    fontSize: 32,
-    marginBottom: Spacing.xs,
-  },
-  placeholderTitle: {
-    fontSize: 11,
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-  progressDot: {
-    position: 'absolute',
-    bottom: 6,
-    right: 6,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  title: {
-    fontSize: 13,
-    fontWeight: '600',
-    lineHeight: 17,
-  },
-  author: {
-    fontSize: 11,
-    marginTop: 2,
   },
 });

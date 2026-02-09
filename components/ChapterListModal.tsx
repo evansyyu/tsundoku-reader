@@ -11,7 +11,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/contexts/ThemeContext';
 import type { SpineItem } from '@/types/book';
-import { Spacing } from '@/constants/layout';
 
 interface ChapterListModalProps {
   visible: boolean;
@@ -40,6 +39,8 @@ function ChapterListModal({
       const isCurrent = index === currentChapterIndex;
       return (
         <Pressable
+          className="flex-row items-center justify-between px-md"
+          // StyleSheet kept: hairlineWidth, fixed ITEM_HEIGHT, dynamic background for active
           style={[
             styles.row,
             { borderBottomColor: colors.border },
@@ -51,20 +52,17 @@ function ChapterListModal({
           }}
         >
           <Text
-            style={[
-              styles.chapterName,
-              { color: isCurrent ? colors.tint : colors.text },
-              isCurrent && styles.chapterNameActive,
-            ]}
+            className={`flex-1 text-base mr-sm ${isCurrent ? 'font-semibold' : ''}`}
+            style={{ color: isCurrent ? colors.tint : colors.text }}
             numberOfLines={1}
           >
             {formatChapterName(item.id, index)}
           </Text>
           <Text
+            className={`text-sm ${isCurrent ? 'font-semibold' : ''}`}
             style={[
-              styles.chapterPos,
               { color: isCurrent ? colors.tint : colors.textSecondary },
-              isCurrent && styles.chapterPosActive,
+              styles.tabularNums,
             ]}
           >
             {index + 1}
@@ -84,12 +82,16 @@ function ChapterListModal({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
+      {/* StyleSheet kept: paddingTop is dynamic safe area inset */}
+      <View className="flex-1 bg-white dark:bg-black" style={{ paddingTop: insets.top }}>
         {/* Header */}
-        <View style={[styles.header, { borderBottomColor: colors.border }]}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Chapters</Text>
+        <View
+          className="flex-row items-center justify-between px-md py-sm"
+          style={{ borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}
+        >
+          <Text className="text-lg font-bold text-black dark:text-white">Chapters</Text>
           <Pressable
-            style={[styles.closeButton, { backgroundColor: colors.surfaceSecondary }]}
+            className="w-8 h-8 rounded-full justify-center items-center bg-surface-secondary dark:bg-surface-dark-secondary"
             onPress={onClose}
             hitSlop={12}
           >
@@ -102,7 +104,7 @@ function ChapterListModal({
           data={spine}
           renderItem={renderItem}
           keyExtractor={keyExtractor}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={{ paddingBottom: 48 }}
           showsVerticalScrollIndicator={false}
           initialScrollIndex={
             currentChapterIndex > 4 ? currentChapterIndex - 2 : 0
@@ -132,53 +134,13 @@ const ITEM_HEIGHT = 52;
 
 export default memo(ChapterListModal);
 
+// StyleSheet kept: hairlineWidth, fixed row height, fontVariant
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  listContent: {
-    paddingBottom: Spacing.xxl,
-  },
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.md,
     height: ITEM_HEIGHT,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  chapterName: {
-    flex: 1,
-    fontSize: 16,
-    marginRight: Spacing.sm,
-  },
-  chapterNameActive: {
-    fontWeight: '600',
-  },
-  chapterPos: {
-    fontSize: 14,
+  tabularNums: {
     fontVariant: ['tabular-nums'],
-  },
-  chapterPosActive: {
-    fontWeight: '600',
   },
 });

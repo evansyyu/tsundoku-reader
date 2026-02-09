@@ -3,7 +3,6 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import type { ReadingTheme } from '@/types/settings';
-import { BorderRadius, Spacing } from '@/constants/layout';
 
 /**
  * Reading theme picker: shows color swatches for each available theme.
@@ -15,8 +14,10 @@ export default function ThemePicker() {
   const selectedId = settings.reading.readingThemeId;
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.surface }]}>
-      <View style={styles.row}>
+    <View className="rounded-app-lg p-md bg-surface dark:bg-surface-dark">
+      <Text className="text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-2">Reader Theme</Text>
+      {/* StyleSheet kept: gap uses computed value (Spacing.md - 2 = 14) */}
+      <View className="flex-row flex-wrap" style={styles.row}>
         {allThemes.map((theme) => (
           <ThemeSwatch
             key={theme.id}
@@ -42,24 +43,28 @@ function ThemeSwatch({
   const { colors } = useTheme();
 
   return (
-    <Pressable onPress={onPress} style={styles.swatchContainer}>
+    <Pressable onPress={onPress} className="items-center w-14">
+      {/* StyleSheet kept: dynamic backgroundColor/borderColor from theme object */}
       <View
+        className="w-12 h-12 rounded-app-md justify-center items-center"
         style={[
-          styles.swatch,
-          { backgroundColor: theme.backgroundColor, borderColor: theme.textColor },
+          {
+            backgroundColor: theme.backgroundColor,
+            borderColor: theme.textColor,
+            borderWidth: 2,
+          },
           isSelected && { borderColor: colors.tint, borderWidth: 3 },
         ]}
       >
         <Text
-          style={[styles.swatchText, { color: theme.textColor }]}
-          numberOfLines={1}
+          className="text-lg font-semibold"
+          style={{ color: theme.textColor }}
         >
           Aa
         </Text>
       </View>
       <Text
-        style={[styles.swatchLabel, { color: colors.textSecondary }]}
-        numberOfLines={1}
+        className="text-[10px] mt-1 text-center text-text-secondary dark:text-text-secondary-dark"
       >
         {theme.name}
       </Text>
@@ -67,35 +72,9 @@ function ThemeSwatch({
   );
 }
 
+// StyleSheet kept: gap value is a non-standard computed constant
 const styles = StyleSheet.create({
-  container: {
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-  },
   row: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.md - 2,
-  },
-  swatchContainer: {
-    alignItems: 'center',
-    width: 56,
-  },
-  swatch: {
-    width: 48,
-    height: 48,
-    borderRadius: BorderRadius.md,
-    borderWidth: 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  swatchText: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  swatchLabel: {
-    fontSize: 10,
-    marginTop: 4,
-    textAlign: 'center',
+    gap: 14,
   },
 });
