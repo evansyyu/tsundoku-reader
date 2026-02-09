@@ -10,13 +10,13 @@ export const BASE_READER_FONT_SIZE = 18;
  * Each step is roughly 2px change.
  */
 export const FONT_SIZE_SCALE: Record<number, number> = {
-  [-3]: 12,
-  [-2]: 14,
-  [-1]: 16,
-  [0]: 18,
-  [1]: 20,
-  [2]: 22,
-  [3]: 26,
+  [-3]: 20,
+  [-2]: 22,
+  [-1]: 24,
+  [0]: 26,
+  [1]: 28,
+  [2]: 32,
+  [3]: 36,
 };
 
 export const FONT_SIZE_MIN = -3;

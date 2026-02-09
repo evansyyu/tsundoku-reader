@@ -9,6 +9,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import EpubReader from '@/components/EpubReader';
 import type { EpubReaderHandle } from '@/components/EpubReader';
 import ReaderControls from '@/components/ReaderControls';
+import { setChapterSelectionHandler, clearChapterSelectionHandler } from '@/utils/chapterSelection';
 import type { ReaderLocation, WebViewToRNMessage } from '@/types/reader';
 
 /**
@@ -159,25 +160,35 @@ export default function ReaderScreen() {
     setControlsVisible(false);
   }, []);
 
+  // Register the chapter selection handler so the chapters modal route can call it
+  useEffect(() => {
+    setChapterSelectionHandler(handleSelectChapter);
+    return () => clearChapterSelectionHandler();
+  }, [handleSelectChapter]);
+
   if (!book) {
     return (
-      <View style={[styles.center, { backgroundColor: colors.background }]}>
-        <Text style={{ color: colors.text }}>Book not found.</Text>
+      <View className="flex-1 justify-center items-center bg-white dark:bg-black">
+        <Text className="text-black dark:text-white">Book not found.</Text>
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: readingTheme.backgroundColor }]}>
+    // StyleSheet kept: backgroundColor is a dynamic reading theme color, not dark/light mode
+    <View className="flex-1" style={{ backgroundColor: readingTheme.backgroundColor }}>
       <StatusBar style={statusBarStyle} />
 
       {!isReady && (
-        <View style={styles.loadingOverlay} pointerEvents="none">
+        <View
+          className="absolute inset-0 justify-center items-center z-10"
+        >
           <ActivityIndicator size="large" color={colors.tint} />
         </View>
       )}
 
-      <View style={[styles.readerArea, { paddingTop: insets.top }]}>
+      {/* StyleSheet kept: paddingTop is a dynamic safe area inset value */}
+      <View className="flex-1" style={{ paddingTop: insets.top }}>
         <EpubReader
           ref={readerRef}
           book={book}
@@ -205,23 +216,3 @@ export default function ReaderScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  readerArea: {
-    flex: 1,
-  },
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-});

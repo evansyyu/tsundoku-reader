@@ -1,6 +1,5 @@
 /**
- * Books tab route -- delegates to BooksScreen.
- * /app folder contains routing only.
+ * Books tab index route -- delegates to BooksScreen.
  */
 import BooksScreen from '@/screens/BooksScreen';
 

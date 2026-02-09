@@ -2,7 +2,6 @@ import React, { memo } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import type { Book } from '@/types/book';
-import { BorderRadius, Spacing } from '@/constants/layout';
 
 interface BookListItemProps {
   book: Book;
@@ -14,39 +13,40 @@ function BookListItem({ book, onPress }: BookListItemProps) {
 
   return (
     <Pressable
+      className="flex-row items-center py-sm px-xs rounded-app-md mb-xs"
+      // StyleSheet kept: dynamic pressed background color from theme
       style={({ pressed }) => [
-        styles.container,
         { backgroundColor: pressed ? colors.surface : 'transparent' },
       ]}
       onPress={onPress}
     >
-      <View style={[styles.cover, { backgroundColor: colors.surface }]}>
+      <View className="w-12 h-[72px] rounded-app-sm overflow-hidden justify-center items-center bg-surface dark:bg-surface-dark">
         {book.coverPath ? (
           <Image
             source={{ uri: book.coverPath }}
-            style={styles.coverImage}
+            className="w-full h-full"
             resizeMode="cover"
           />
         ) : (
-          <Text style={styles.coverPlaceholder}>📖</Text>
+          <Text className="text-2xl">📖</Text>
         )}
       </View>
 
-      <View style={styles.info}>
+      <View className="flex-1 ml-md">
         <Text
-          style={[styles.title, { color: colors.text }]}
+          className="text-base font-semibold leading-5 text-black dark:text-white"
           numberOfLines={2}
         >
           {book.title}
         </Text>
         <Text
-          style={[styles.author, { color: colors.textSecondary }]}
+          className="text-sm mt-0.5 text-text-secondary dark:text-text-secondary-dark"
           numberOfLines={1}
         >
           {book.author || 'Unknown Author'}
         </Text>
         <Text
-          style={[styles.language, { color: colors.textSecondary }]}
+          className="text-xs mt-0.5 text-text-secondary dark:text-text-secondary-dark"
           numberOfLines={1}
         >
           {book.language === 'ja' ? '日本語' : book.language === 'en' ? 'English' : book.language}
@@ -57,46 +57,3 @@ function BookListItem({ book, onPress }: BookListItemProps) {
 }
 
 export default memo(BookListItem);
-
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.xs,
-    borderRadius: BorderRadius.md,
-    marginBottom: Spacing.xs,
-  },
-  cover: {
-    width: 48,
-    height: 72,
-    borderRadius: BorderRadius.sm,
-    overflow: 'hidden',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  coverImage: {
-    width: '100%',
-    height: '100%',
-  },
-  coverPlaceholder: {
-    fontSize: 24,
-  },
-  info: {
-    flex: 1,
-    marginLeft: Spacing.md,
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: '600',
-    lineHeight: 20,
-  },
-  author: {
-    fontSize: 14,
-    marginTop: 2,
-  },
-  language: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-});

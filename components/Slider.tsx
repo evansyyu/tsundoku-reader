@@ -67,7 +67,8 @@ function SliderComponent({
 
   return (
     <View
-      style={[styles.container, style]}
+      className="h-[30px] justify-center"
+      style={style}
       onLayout={handleLayout}
       onStartShouldSetResponder={() => !disabled && range > 0}
       onMoveShouldSetResponder={() => !disabled && range > 0}
@@ -75,20 +76,18 @@ function SliderComponent({
       onResponderMove={handleTouch}
     >
       {/* Track background */}
-      <View style={[styles.track, { backgroundColor: trackColor }]}>
+      <View className="h-1 rounded-sm overflow-hidden" style={{ backgroundColor: trackColor }}>
         {/* Filled portion */}
         <View
-          style={[
-            styles.trackFilled,
-            {
-              backgroundColor: disabled ? 'rgba(120,120,128,0.5)' : tintColor,
-              width: `${Math.max(0, Math.min(100, fraction * 100))}%`,
-            },
-          ]}
+          className="h-full rounded-sm"
+          style={{
+            backgroundColor: disabled ? 'rgba(120,120,128,0.5)' : tintColor,
+            width: `${Math.max(0, Math.min(100, fraction * 100))}%`,
+          }}
         />
       </View>
 
-      {/* Thumb */}
+      {/* Thumb - StyleSheet kept: shadow, dynamic position, marginLeft offset */}
       <View
         style={[
           styles.thumb,
@@ -104,20 +103,8 @@ function SliderComponent({
 
 export default memo(SliderComponent);
 
+// StyleSheet kept: thumb requires shadow properties and negative marginLeft
 const styles = StyleSheet.create({
-  container: {
-    height: 30,
-    justifyContent: 'center',
-  },
-  track: {
-    height: 4,
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  trackFilled: {
-    height: '100%',
-    borderRadius: 2,
-  },
   thumb: {
     position: 'absolute',
     width: 20,

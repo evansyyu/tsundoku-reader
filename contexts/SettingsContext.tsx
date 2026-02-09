@@ -17,7 +17,6 @@ const DEFAULT_READING_SETTINGS: ReadingSettings = {
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
-  themeMode: 'auto',
   reading: DEFAULT_READING_SETTINGS,
   customThemes: [],
   libraryViewMode: 'grid',

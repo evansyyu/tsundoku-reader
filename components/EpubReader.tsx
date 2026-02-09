@@ -1,5 +1,5 @@
 import React, { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview';
 import type { Book } from '@/types/book';
@@ -187,15 +187,15 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
   }, [onMessage]);
 
   if (!htmlContent) {
-    return <View style={styles.container} />;
+    return <View className="flex-1" />;
   }
 
   return (
-    <View style={styles.container}>
+    <View className="flex-1">
       <WebView
         ref={webViewRef}
         source={{ html: htmlContent, baseUrl }}
-        style={styles.webView}
+        className="flex-1 bg-transparent"
         originWhitelist={['*']}
         javaScriptEnabled
         domStorageEnabled={false}
@@ -218,13 +218,3 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
 });
 
 export default memo(EpubReader);
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  webView: {
-    flex: 1,
-    backgroundColor: 'transparent',
-  },
-});

@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View, ViewStyle } from 'react-native';
+import { View, ViewStyle } from 'react-native';
 
 interface GlassCardProps {
   children: React.ReactNode;
@@ -13,17 +13,8 @@ interface GlassCardProps {
  */
 export default function GlassCard({ children, style }: GlassCardProps) {
   return (
-    <View style={[styles.card, style]}>
+    <View className="rounded-app-lg overflow-hidden p-md bg-white/10" style={style}>
       {children}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  card: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    padding: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-  },
-});
