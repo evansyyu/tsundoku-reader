@@ -1,0 +1,30 @@
+/**
+ * Theme utility functions.
+ */
+
+/**
+ * Determine if a color is "light" (for choosing contrasting text color).
+ * Uses relative luminance calculation.
+ */
+export function isLightColor(hex: string): boolean {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return true;
+
+  // Relative luminance formula
+  const luminance = 0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b;
+  return luminance > 128;
+}
+
+/**
+ * Convert a hex color string to RGB components.
+ */
+export function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!result) return null;
+
+  return {
+    r: parseInt(result[1], 16),
+    g: parseInt(result[2], 16),
+    b: parseInt(result[3], 16),
+  };
+}
