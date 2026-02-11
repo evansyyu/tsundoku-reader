@@ -9,6 +9,7 @@ import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
 import { SettingsProvider } from '@/contexts/SettingsContext';
 import { BooksProvider } from '@/contexts/BooksContext';
 import { initDatabase } from '@/utils/database';
+import { initDictionaryDatabase } from '@/utils/dictionary';
 import { ensureStorageDirs } from '@/utils/epub/metadata';
 
 function RootNavigator() {
@@ -58,6 +59,35 @@ function RootNavigator() {
               ) : undefined,
           }}
         />
+        <Stack.Screen
+          name="dictionary/[term]"
+          options={{
+            presentation: Platform.OS === 'ios' ? 'formSheet' : 'modal',
+            sheetGrabberVisible: true,
+            sheetAllowedDetents: [0.5, 0.85],
+            headerShown: true,
+            headerLargeTitle: false,
+            title: '',
+            headerTransparent: Platform.OS === 'ios',
+            headerBlurEffect: glassAvailable ? undefined : isDark ? 'dark' : 'light',
+            headerStyle: {
+              backgroundColor: Platform.OS === 'ios' ? 'transparent' : colors.background,
+            },
+            contentStyle: {
+              backgroundColor: glassAvailable ? 'transparent' : colors.background,
+            },
+            headerLeft: () =>
+              Platform.OS === 'ios' ? (
+                <Pressable onPress={() => router.back()} hitSlop={12}>
+                  <Ionicons
+                    name="close-outline"
+                    size={36}
+                    color={isDark ? '#FFFFFF' : '#8E8E93'}
+                  />
+                </Pressable>
+              ) : undefined,
+          }}
+        />
       </Stack>
     </>
   );
@@ -70,8 +100,15 @@ function AppContent() {
   useEffect(() => {
     async function initialize() {
       try {
-        // Initialize database and storage directories in parallel
-        await Promise.all([initDatabase(), ensureStorageDirs()]);
+        // Initialize databases and storage directories in parallel
+        // Dictionary init is non-critical -- don't block app if it fails
+        await Promise.all([
+          initDatabase(),
+          initDictionaryDatabase().catch((err) =>
+            console.warn('[App] Dictionary database init failed (non-critical):', err)
+          ),
+          ensureStorageDirs(),
+        ]);
       } catch (error) {
         console.error('[App] Initialization failed:', error);
       } finally {

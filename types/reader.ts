@@ -26,10 +26,18 @@ export type WebViewToRNMessage =
   | { type: 'pageChange'; currentPage: number; totalPages: number }
   | { type: 'chapterEnd' }
   | { type: 'chapterStart' }
+  | { type: 'chapterIndexUpdate'; chapterIndex: number }
   | { type: 'linkTap'; href: string }
   | { type: 'selectionChange'; text: string }
   | { type: 'contentHeight'; height: number }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string }
+  | {
+      type: 'dictionaryLookup';
+      /** Surrounding text window extracted from the DOM */
+      text: string;
+      /** Character offset of the pressed character within `text` */
+      offset: number;
+    };
 
 /** Commands sent from React Native -> WebView via injectJavaScript */
 export type RNToWebViewCommand =
@@ -44,7 +52,16 @@ export type RNToWebViewCommand =
       fontFamily: string;
     }
   | { type: 'setViewMode'; mode: 'paginated' | 'continuous' }
-  | { type: 'getPageInfo' };
+  | { type: 'getPageInfo' }
+  | {
+      type: 'highlightDictionary';
+      /** Offset within the surrounding text where the match starts */
+      startOffset: number;
+      /** Number of characters to highlight */
+      length: number;
+    }
+  | { type: 'clearDictionaryHighlight' }
+  | { type: 'setDictionaryEnabled'; enabled: boolean };
 
 export interface TOCItem {
   /** Title of the chapter/section */

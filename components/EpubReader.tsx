@@ -5,7 +5,7 @@ import type { WebViewMessageEvent } from 'react-native-webview';
 import type { Book } from '@/types/book';
 import type { ReadingSettings, ReadingTheme } from '@/types/settings';
 import type { WebViewToRNMessage } from '@/types/reader';
-import { buildChapterHtml } from '@/utils/epub/css';
+import { buildChapterHtml, buildContinuousHtml } from '@/utils/epub/css';
 import { READER_BRIDGE_JS } from '@/constants/reader';
 import { FONT_SIZE_SCALE } from '@/constants/typography';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -13,6 +13,12 @@ import * as FileSystem from 'expo-file-system/legacy';
 export interface EpubReaderHandle {
   /** Navigate to a specific page within the current chapter */
   goToPage: (page: number) => void;
+  /** Highlight matched dictionary text in the WebView */
+  highlightDictionary: (startOffset: number, length: number) => void;
+  /** Clear dictionary highlight from the WebView */
+  clearDictionaryHighlight: () => void;
+  /** Scroll to a specific chapter section in continuous mode */
+  scrollToChapter: (chapterIndex: number, smooth?: boolean) => void;
 }
 
 interface EpubReaderProps {
@@ -54,11 +60,32 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
   const startAtEndRef = useRef(startAtEnd);
   const initialPageRef = useRef(initialPage);
 
+  // Track whether continuous mode content is already loaded (all chapters at once)
+  const continuousLoadedBookId = useRef<string | null>(null);
+  // Track the last chapter index we know about to avoid unnecessary scrollToChapter calls
+  // when the bridge reports chapterIndexUpdate (which already reflects the current scroll).
+  const lastKnownChapterRef = useRef(chapterIndex);
+
   // Expose imperative methods to parent
   useImperativeHandle(ref, () => ({
     goToPage: (page: number) => {
       webViewRef.current?.injectJavaScript(
         `window.__readerBridge && window.__readerBridge.goToPage(${page}); true;`
+      );
+    },
+    highlightDictionary: (startOffset: number, length: number) => {
+      webViewRef.current?.injectJavaScript(
+        `window.__readerBridge && window.__readerBridge.highlightDictionary(${startOffset}, ${length}); true;`
+      );
+    },
+    clearDictionaryHighlight: () => {
+      webViewRef.current?.injectJavaScript(
+        `window.__readerBridge && window.__readerBridge.clearDictionaryHighlight(); true;`
+      );
+    },
+    scrollToChapter: (chapterIndex: number, smooth?: boolean) => {
+      webViewRef.current?.injectJavaScript(
+        `window.__readerBridge && window.__readerBridge.scrollToChapter(${chapterIndex}, ${smooth !== false}); true;`
       );
     },
   }));
@@ -67,57 +94,117 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
   const onMessageRef = useRef(onMessage);
   onMessageRef.current = onMessage;
 
+
   // Load chapter content
   useEffect(() => {
     let cancelled = false;
 
-    async function loadChapter() {
+    const isContinuous = settings.viewMode === 'continuous';
+    const isVertical = book.language === 'ja' || book.pageProgressionDirection === 'rtl';
+    const fontSize = FONT_SIZE_SCALE[settings.fontSizeScale] ?? 18;
+
+    const commonOpts = {
+      isVertical,
+      textColor: readingTheme.textColor,
+      backgroundColor: readingTheme.backgroundColor,
+      fontSize,
+      lineHeight: settings.lineHeight,
+      fontFamily: settings.fontFamily,
+      pageMargin: settings.pageMargin,
+    };
+
+    async function loadContent() {
       const spine = book.spine;
-      console.log(`[EpubReader] loadChapter called: chapterIndex=${chapterIndex}, spineLength=${spine.length}`);
-      if (chapterIndex < 0 || chapterIndex >= spine.length) {
-        console.warn(`[EpubReader] chapterIndex ${chapterIndex} out of range`);
-        return;
-      }
 
-      const spineItem = spine[chapterIndex];
-      const chapterPath = `${book.filePath}/${spineItem.href}`;
+      if (isContinuous) {
+        // ── Continuous mode: load ALL chapters at once ──
+        // If already loaded for this book, only scroll if the chapter actually
+        // changed from a user action (e.g. chapter list selection).
+        // Skip if the change came from the bridge's own chapterIndexUpdate.
+        if (continuousLoadedBookId.current === book.id) {
+          if (chapterIndex !== lastKnownChapterRef.current) {
+            console.log(`[EpubReader] Continuous already loaded, scrolling to ch ${chapterIndex}`);
+            lastKnownChapterRef.current = chapterIndex;
+            setTimeout(() => {
+              webViewRef.current?.injectJavaScript(
+                `window.__readerBridge && window.__readerBridge.scrollToChapter(${chapterIndex}, true); true;`
+              );
+            }, 50);
+          }
+          // Tell parent we're ready immediately (content is already in WebView)
+          onMessageRef.current({ type: 'ready' });
+          return;
+        }
 
-      try {
-        const content = await FileSystem.readAsStringAsync(chapterPath, {
-          encoding: FileSystem.EncodingType.UTF8,
-        });
+        console.log(`[EpubReader] Loading all ${spine.length} chapters for continuous mode`);
+        try {
+          const allContents: string[] = [];
+          for (const item of spine) {
+            const path = `${book.filePath}/${item.href}`;
+            const content = await FileSystem.readAsStringAsync(path, {
+              encoding: FileSystem.EncodingType.UTF8,
+            });
+            if (cancelled) return;
+            allContents.push(content);
+          }
 
-        if (cancelled) return;
+          const chapterHrefs = spine.map((item) => item.href);
+          const html = buildContinuousHtml(allContents, chapterHrefs, commonOpts);
+          // Queue scroll to the initial chapter after the WebView loads
+          if (chapterIndex > 0) {
+            pendingScrollChapterRef.current = chapterIndex;
+          }
+          setHtmlContent(html);
+          setBaseUrl(`${book.filePath}/`);
+          continuousLoadedBookId.current = book.id;
+        } catch (error) {
+          console.error('[EpubReader] Failed to load chapters:', error);
+          onMessageRef.current({
+            type: 'error',
+            message: `Failed to load chapters: ${error}`,
+          });
+        }
+      } else {
+        // ── Paginated mode: load single chapter ──
+        continuousLoadedBookId.current = null;
 
-        const isVertical = book.language === 'ja' || book.pageProgressionDirection === 'rtl';
-        const fontSize = FONT_SIZE_SCALE[settings.fontSizeScale] ?? 18;
+        console.log(`[EpubReader] loadChapter called: chapterIndex=${chapterIndex}, spineLength=${spine.length}`);
+        if (chapterIndex < 0 || chapterIndex >= spine.length) {
+          console.warn(`[EpubReader] chapterIndex ${chapterIndex} out of range`);
+          return;
+        }
 
-        const html = buildChapterHtml(content, {
-          isVertical,
-          isPaginated: settings.viewMode === 'paginated',
-          textColor: readingTheme.textColor,
-          backgroundColor: readingTheme.backgroundColor,
-          fontSize,
-          lineHeight: settings.lineHeight,
-          fontFamily: settings.fontFamily,
-          pageMargin: settings.pageMargin,
-        });
+        const spineItem = spine[chapterIndex];
+        const chapterPath = `${book.filePath}/${spineItem.href}`;
 
-        setHtmlContent(html);
+        try {
+          const content = await FileSystem.readAsStringAsync(chapterPath, {
+            encoding: FileSystem.EncodingType.UTF8,
+          });
 
-        const lastSlash = chapterPath.lastIndexOf('/');
-        const newBaseUrl = chapterPath.substring(0, lastSlash + 1);
-        setBaseUrl(newBaseUrl);
-      } catch (error) {
-        console.error('[EpubReader] Failed to load chapter:', error);
-        onMessageRef.current({
-          type: 'error',
-          message: `Failed to load chapter: ${error}`,
-        });
+          if (cancelled) return;
+
+          const html = buildChapterHtml(content, {
+            ...commonOpts,
+            isPaginated: true,
+          });
+
+          setHtmlContent(html);
+
+          const lastSlash = chapterPath.lastIndexOf('/');
+          const newBaseUrl = chapterPath.substring(0, lastSlash + 1);
+          setBaseUrl(newBaseUrl);
+        } catch (error) {
+          console.error('[EpubReader] Failed to load chapter:', error);
+          onMessageRef.current({
+            type: 'error',
+            message: `Failed to load chapter: ${error}`,
+          });
+        }
       }
     }
 
-    loadChapter();
+    loadContent();
 
     return () => {
       cancelled = true;
@@ -151,20 +238,26 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
           return;
         }
 
-        // When the bridge reports initial page info, jump to requested page
+        // When the bridge reports which chapter is visible, update our ref
+        // so the loadContent effect knows not to inject an unnecessary scroll.
+        if (data.type === 'chapterIndexUpdate') {
+          lastKnownChapterRef.current = data.chapterIndex;
+        }
+
+        // When the bridge reports initial page info, jump to requested page (no animation)
         if (data.type === 'pageInfo') {
           if (startAtEndRef.current) {
             startAtEndRef.current = false;
             if (data.totalPages > 1) {
               webViewRef.current?.injectJavaScript(
-                `window.__readerBridge && window.__readerBridge.goToPage(${data.totalPages - 1}); true;`
+                `window.__readerBridge && window.__readerBridge.goToPage(${data.totalPages - 1}, false); true;`
               );
             }
           } else if (initialPageRef.current != null && initialPageRef.current > 0) {
             const page = initialPageRef.current;
             initialPageRef.current = undefined;
             webViewRef.current?.injectJavaScript(
-              `window.__readerBridge && window.__readerBridge.goToPage(${page}); true;`
+              `window.__readerBridge && window.__readerBridge.goToPage(${page}, false); true;`
             );
           }
         }
@@ -181,10 +274,36 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
   const bridgeScriptRef = useRef('');
   bridgeScriptRef.current = READER_BRIDGE_JS.replace('__PAGINATED__', String(settings.viewMode === 'paginated'));
 
+  // Track whether dictionary should be enabled for this book
+  const isJapanese = book.language === 'ja' || book.language.startsWith('ja-');
+
+  // Track the initial chapter to scroll to when continuous mode first loads
+  const pendingScrollChapterRef = useRef<number | null>(null);
+
   const handleLoadEnd = useCallback(() => {
     webViewRef.current?.injectJavaScript(bridgeScriptRef.current);
+    // Enable dictionary lookup for Japanese books after bridge init
+    if (isJapanese) {
+      setTimeout(() => {
+        webViewRef.current?.injectJavaScript(
+          `window.__readerBridge && window.__readerBridge.setDictionaryEnabled(true); true;`
+        );
+      }, 100);
+    }
+
+    // In continuous mode, scroll to the requested chapter after the bridge initializes
+    if (pendingScrollChapterRef.current != null && pendingScrollChapterRef.current > 0) {
+      const ch = pendingScrollChapterRef.current;
+      pendingScrollChapterRef.current = null;
+      setTimeout(() => {
+        webViewRef.current?.injectJavaScript(
+          `window.__readerBridge && window.__readerBridge.scrollToChapter(${ch}, false); true;`
+        );
+      }, 150);
+    }
+
     onMessage({ type: 'ready' });
-  }, [onMessage]);
+  }, [onMessage, isJapanese]);
 
   if (!htmlContent) {
     return <View className="flex-1" />;

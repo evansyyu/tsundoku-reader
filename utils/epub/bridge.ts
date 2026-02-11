@@ -51,6 +51,15 @@ function buildCommandJS(command: RNToWebViewCommand): string {
     case 'getPageInfo':
       return `window.__readerBridge?.getPageInfo(); true;`;
 
+    case 'highlightDictionary':
+      return `window.__readerBridge?.highlightDictionary(${command.startOffset}, ${command.length}); true;`;
+
+    case 'clearDictionaryHighlight':
+      return `window.__readerBridge?.clearDictionaryHighlight(); true;`;
+
+    case 'setDictionaryEnabled':
+      return `window.__readerBridge?.setDictionaryEnabled(${command.enabled}); true;`;
+
     default:
       return 'true;';
   }
