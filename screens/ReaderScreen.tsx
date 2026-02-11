@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -10,6 +10,9 @@ import EpubReader from '@/components/EpubReader';
 import type { EpubReaderHandle } from '@/components/EpubReader';
 import ReaderControls from '@/components/ReaderControls';
 import { setChapterSelectionHandler, clearChapterSelectionHandler } from '@/utils/chapterSelection';
+import { setDictionaryDismissHandler, clearDictionaryDismissHandler } from '@/utils/dictionarySelection';
+import { findAllMatches } from '@/utils/dictionary';
+import { mediumTap } from '@/utils/haptics';
 import type { ReaderLocation, WebViewToRNMessage } from '@/types/reader';
 
 /**
@@ -27,7 +30,7 @@ function isDarkColor(hex: string): boolean {
 
 export default function ReaderScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { getBook, updateLastRead, saveReadingProgress } = useBooks();
+  const { getBook, updateLastRead, saveReadingProgress, removeBook } = useBooks();
   const { settings, getReadingTheme } = useSettings();
   const { colors } = useTheme();
   const router = useRouter();
@@ -48,6 +51,9 @@ export default function ReaderScreen() {
 
   // Track whether this is the first load (to restore saved page)
   const isInitialLoad = useRef(true);
+
+  // Prevent duplicate "book missing" alerts
+  const hasShownMissingAlert = useRef(false);
 
   // Keep a ref so the stable handleMessage callback can always read the latest book
   const bookRef = useRef(book);
@@ -71,12 +77,15 @@ export default function ReaderScreen() {
     saveProgressRef.current(id, currentLocation.chapterIndex, currentLocation.pageNumber);
   }, [id, isReady, currentLocation.chapterIndex, currentLocation.pageNumber]);
 
+  // Keep a ref to settings so handleMessage can check viewMode without depending on it
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+
   const handleMessage = useCallback(
     (message: WebViewToRNMessage) => {
       switch (message.type) {
         case 'ready':
           setIsReady(true);
-          // After first load, clear the initial page flag
           if (isInitialLoad.current) {
             isInitialLoad.current = false;
           }
@@ -94,6 +103,8 @@ export default function ReaderScreen() {
           setTotalPages(message.totalPages);
           break;
         case 'chapterEnd': {
+          // In continuous mode (all chapters loaded), chapterEnd is not fired.
+          // This only fires in paginated mode.
           const spineLen = bookRef.current?.spine.length ?? 0;
           setCurrentLocation((prev) => {
             if (prev.chapterIndex < spineLen - 1) {
@@ -111,6 +122,7 @@ export default function ReaderScreen() {
           break;
         }
         case 'chapterStart': {
+          // Only fires in paginated mode.
           setCurrentLocation((prev) => {
             if (prev.chapterIndex > 0) {
               return {
@@ -126,13 +138,118 @@ export default function ReaderScreen() {
           setStartAtEnd(true);
           break;
         }
+        case 'chapterIndexUpdate':
+          // Continuous mode: bridge reports which chapter section is visible.
+          // Update location without triggering a content reload.
+          setCurrentLocation((prev) => {
+            if (prev.chapterIndex === message.chapterIndex) return prev;
+            return {
+              ...prev,
+              chapterIndex: message.chapterIndex,
+            };
+          });
+          break;
+        case 'dictionaryLookup':
+          handleDictionaryLookup(message.text, message.offset);
+          break;
         case 'error':
           console.error('[ReaderScreen] WebView error:', message.message);
+          if (
+            (message.message?.includes('is not readable') ||
+              message.message?.includes('could not be read') ||
+              message.message?.includes('No such file')) &&
+            !hasShownMissingAlert.current
+          ) {
+            hasShownMissingAlert.current = true;
+            handleBookFileMissing();
+          }
           break;
       }
     },
     [] // eslint-disable-line react-hooks/exhaustive-deps
   );
+
+  /**
+   * Handle a missing/corrupt book file: alert the user, remove the book, and go back.
+   */
+  const handleBookFileMissing = useCallback(() => {
+    Alert.alert(
+      'Book Unavailable',
+      'This book\u2019s files could not be found. It may have been deleted or corrupted. The book will be removed from your library.',
+      [
+        {
+          text: 'OK',
+          onPress: async () => {
+            if (id) {
+              try {
+                await removeBook(id);
+              } catch (err) {
+                console.error('[ReaderScreen] Failed to remove missing book:', err);
+              }
+            }
+            router.back();
+          },
+        },
+      ],
+      { cancelable: false }
+    );
+  }, [id, removeBook, router]);
+
+  /**
+   * Handle a dictionary lookup request from the WebView.
+   * Finds all matches, highlights the longest, and opens the dictionary
+   * modal with a pager for every match.
+   */
+  const handleDictionaryLookup = useCallback(
+    async (text: string, offset: number) => {
+      try {
+        // Haptic feedback immediately
+        mediumTap();
+
+        const results = await findAllMatches(text, offset);
+        if (results.length === 0) {
+          console.log('[ReaderScreen] No dictionary match found');
+          return;
+        }
+
+        const primary = results[0];
+        console.log(
+          `[ReaderScreen] ${results.length} match(es), primary: "${primary.matchedTerm}" (id=${primary.entry.id})` +
+            (primary.originalForm ? ` [from "${primary.originalForm}"]` : '')
+        );
+
+        // Highlight the primary (longest) match in the WebView
+        readerRef.current?.highlightDictionary(primary.matchStartOffset, primary.matchLength);
+
+        // Encode match metadata for the dictionary modal
+        const matchInfo = results.map((r) => ({
+          id: r.entry.id,
+          term: r.matchedTerm,
+          original: r.originalForm,
+          rules: r.deinflectionRules,
+        }));
+
+        const route =
+          `/dictionary/${encodeURIComponent(primary.matchedTerm)}` +
+          `?matches=${encodeURIComponent(JSON.stringify(matchInfo))}`;
+
+        router.push(route);
+      } catch (err) {
+        console.error('[ReaderScreen] Dictionary lookup error:', err);
+      }
+    },
+    [router]
+  );
+
+  /**
+   * When the dictionary modal is dismissed, leave native text selection
+   * intact so the user can adjust the selection handles or copy text.
+   * The selection will clear naturally when the user taps elsewhere,
+   * or when a new dictionary lookup replaces it.
+   */
+  const handleDictionaryDismiss = useCallback(() => {
+    // Intentionally no-op: preserve native selection after modal dismiss.
+  }, []);
 
   const handleCenterTap = useCallback(() => {
     setControlsVisible((prev) => !prev);
@@ -151,12 +268,25 @@ export default function ReaderScreen() {
   }, []);
 
   const handleSelectChapter = useCallback((index: number) => {
-    setCurrentLocation((prev) => {
-      if (index === prev.chapterIndex) return prev;
-      return { ...prev, chapterIndex: index, pageNumber: 0, chapterProgress: 0 };
-    });
-    setIsReady(false);
-    setStartAtEnd(false);
+    const isContinuous = settingsRef.current.reading.viewMode === 'continuous';
+
+    if (isContinuous) {
+      // Continuous mode: all chapters are already loaded, just scroll
+      readerRef.current?.scrollToChapter(index);
+      setCurrentLocation((prev) => {
+        if (index === prev.chapterIndex) return prev;
+        return { ...prev, chapterIndex: index, chapterProgress: 0 };
+      });
+    } else {
+      // Paginated mode: trigger full reload
+      setCurrentLocation((prev) => {
+        if (index === prev.chapterIndex) return prev;
+        return { ...prev, chapterIndex: index, pageNumber: 0, chapterProgress: 0 };
+      });
+      setIsReady(false);
+      setStartAtEnd(false);
+    }
+
     setControlsVisible(false);
   }, []);
 
@@ -165,6 +295,12 @@ export default function ReaderScreen() {
     setChapterSelectionHandler(handleSelectChapter);
     return () => clearChapterSelectionHandler();
   }, [handleSelectChapter]);
+
+  // Register the dictionary dismiss handler so the dictionary modal can clear highlights
+  useEffect(() => {
+    setDictionaryDismissHandler(handleDictionaryDismiss);
+    return () => clearDictionaryDismissHandler();
+  }, [handleDictionaryDismiss]);
 
   if (!book) {
     return (
