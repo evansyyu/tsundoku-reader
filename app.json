@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Tsundoku Reader",
+    "name": "tsundoku",
     "slug": "tsundoku-reader",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -17,7 +17,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.tsundoku.reader",
       "usesIcloudStorage": true,
-      "icon": "./assets/icon.png",
+      "icon": "./assets/tsundoku.icon",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
