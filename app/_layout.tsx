@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -7,10 +7,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { isLiquidGlassAvailable } from 'expo-glass-effect';
 import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
 import { SettingsProvider } from '@/contexts/SettingsContext';
-import { BooksProvider } from '@/contexts/BooksContext';
+import { BooksProvider, useBooks } from '@/contexts/BooksContext';
 import { initDatabase } from '@/utils/database';
 import { initDictionaryDatabase } from '@/utils/dictionary';
 import { ensureStorageDirs } from '@/utils/epub/metadata';
+import { mmkv } from '@/utils/storage';
+import { ACTIVE_BOOK_KEY } from '@/screens/ReaderScreen';
 
 function RootNavigator() {
   const { isDark, colors } = useTheme();
@@ -124,6 +126,35 @@ function RootNavigator() {
   );
 }
 
+/**
+ * Restores the reader session when the app relaunches after being killed
+ * while a book was open. Runs once after books finish loading.
+ */
+function ActiveBookRestore() {
+  const router = useRouter();
+  const { books, isLoading } = useBooks();
+  const checked = useRef(false);
+
+  useEffect(() => {
+    if (isLoading || checked.current) return;
+    checked.current = true;
+
+    const activeId = mmkv.getString(ACTIVE_BOOK_KEY);
+    if (!activeId) return;
+
+    const exists = books.some((b) => b.id === activeId);
+    if (exists) {
+      // Push the reader on top of the tabs so "back" returns to the library
+      setTimeout(() => router.push(`/reader/${activeId}`), 0);
+    } else {
+      // Book was deleted; clear stale reference
+      mmkv.delete(ACTIVE_BOOK_KEY);
+    }
+  }, [isLoading, books, router]);
+
+  return null;
+}
+
 function AppContent() {
   const [isReady, setIsReady] = useState(false);
   const { colors } = useTheme();
@@ -135,13 +166,11 @@ function AppContent() {
         // Dictionary init is non-critical -- don't block app if it fails
         await Promise.all([
           initDatabase(),
-          initDictionaryDatabase().catch((err) =>
-            console.warn('[App] Dictionary database init failed (non-critical):', err)
-          ),
+          initDictionaryDatabase().catch(() => {}),
           ensureStorageDirs(),
         ]);
-      } catch (error) {
-        console.error('[App] Initialization failed:', error);
+      } catch {
+        // initialization failed
       } finally {
         setIsReady(true);
       }
@@ -160,6 +189,7 @@ function AppContent() {
 
   return (
     <BooksProvider>
+      <ActiveBookRestore />
       <RootNavigator />
     </BooksProvider>
   );

@@ -26,7 +26,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { isLiquidGlassAvailable } from 'expo-glass-effect';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '@/contexts/ThemeContext';
-import { lookupWord, lookupWordById, fetchSentences } from '@/utils/dictionary';
+import { lookupWord, lookupWordById, fetchSentences, lookupKanjiBatch } from '@/utils/dictionary';
 import { notifyDictionaryDismissed } from '@/utils/dictionarySelection';
 import { sensesAbbreviationMap, expandAbbreviation } from '@/constants/sense_abbreviations_map';
 import { getTagStyle } from '@/constants/wordTagStyles';
@@ -393,6 +393,29 @@ const pitchStyles = StyleSheet.create({
 });
 
 // ---------------------------------------------------------------------------
+// Kanji extraction helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract unique kanji characters from a string, preserving order.
+ * Covers CJK Unified Ideographs (U+4E00–U+9FFF) and Extension A (U+3400–U+4DBF).
+ */
+function extractKanji(text: string): string[] {
+  const kanji: string[] = [];
+  const seen = new Set<string>();
+  for (const char of text) {
+    const cp = char.codePointAt(0) ?? 0;
+    if ((cp >= 0x4E00 && cp <= 0x9FFF) || (cp >= 0x3400 && cp <= 0x4DBF)) {
+      if (!seen.has(char)) {
+        seen.add(char);
+        kanji.push(char);
+      }
+    }
+  }
+  return kanji;
+}
+
+// ---------------------------------------------------------------------------
 // Single entry page (rendered inside the pager)
 // ---------------------------------------------------------------------------
 
@@ -424,6 +447,23 @@ function EntryPage({
   useEffect(() => {
     fetchSentences(entry.id, 5).then(setSentences).catch(() => {});
   }, [entry.id]);
+
+  // Kanji used in headword
+  const headwordKanji = useMemo(() => extractKanji(entry.term), [entry.term]);
+  const [kanjiMeanings, setKanjiMeanings] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    console.log(`[Kanji] term="${entry.term}" extracted=[${headwordKanji.join(',')}] count=${headwordKanji.length}`);
+    if (headwordKanji.length > 0) {
+      lookupKanjiBatch(headwordKanji)
+        .then((m) => {
+          console.log(`[Kanji] batch resolved, size=${m.size}`);
+          setKanjiMeanings(m);
+        })
+        .catch((err) => {
+          console.log(`[Kanji] batch ERROR: ${err}`);
+        });
+    }
+  }, [headwordKanji]);
 
   return (
     <ScrollView
@@ -561,6 +601,27 @@ function EntryPage({
         </View>
       )}
 
+      {/* ── Kanji Used ──────────────────────────── */}
+      {headwordKanji.length > 0 && kanjiMeanings.size > 0 && (
+        <View style={styles.kanjiSection}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
+            Kanji Used
+          </Text>
+          {headwordKanji.map((k) => {
+            const meaning = kanjiMeanings.get(k);
+            if (!meaning) return null;
+            return (
+              <View key={k} style={styles.kanjiRow}>
+                <Text style={[styles.kanjiChar, { color: colors.text }]}>{k}</Text>
+                <Text style={[styles.kanjiMeaning, { color: colors.textSecondary }]}>
+                  {meaning}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      )}
+
       {/* ── Pitch Accent ────────────────────────── */}
       {entry.pitchAccent.length > 0 && (
         <View style={styles.pitchSection}>
@@ -654,8 +715,8 @@ export default function DictionaryScreen() {
             setLoadedEntries([{ entry }]);
           }
         }
-      } catch (err) {
-        console.error('[DictionaryScreen] Lookup error:', err);
+      } catch {
+        // lookup failed silently
       } finally {
         setLoading(false);
       }
@@ -949,6 +1010,27 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 23,
     marginTop: 3,
+  },
+  // ── Kanji Used ──
+  kanjiSection: {
+    marginBottom: 16,
+  },
+  kanjiRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginBottom: 12,
+  },
+  kanjiChar: {
+    fontSize: 32,
+    fontWeight: '700',
+    width: 36,
+    textAlign: 'center',
+  },
+  kanjiMeaning: {
+    fontSize: 16,
+    lineHeight: 20,
+    flex: 1,
   },
   // ── Page indicator dots ──
   pageDotsContainer: {

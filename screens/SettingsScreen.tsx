@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -110,6 +111,46 @@ export default function SettingsScreen() {
               color={colors.tint}
             />
           </View>
+
+          {/* Blur Images Toggle */}
+          <View
+            style={{
+              borderTopWidth: StyleSheet.hairlineWidth,
+              borderColor: colors.border,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingHorizontal: 16,
+              height: 44,
+            }}
+          >
+            <Text className="text-base text-black dark:text-white">Blur Images</Text>
+            <ToggleSwitch
+              value={reading.blurImages}
+              onValueChange={(v) => updateReadingSettings({ blurImages: v })}
+              color={colors.tint}
+            />
+          </View>
+
+          {/* Progress Counter Toggle */}
+          <View
+            style={{
+              borderTopWidth: StyleSheet.hairlineWidth,
+              borderColor: colors.border,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingHorizontal: 16,
+              height: 44,
+            }}
+          >
+            <Text className="text-base text-black dark:text-white">Progress Counter</Text>
+            <ToggleSwitch
+              value={reading.showProgressIndicator}
+              onValueChange={(v) => updateReadingSettings({ showProgressIndicator: v })}
+              color={colors.tint}
+            />
+          </View>
         </View>
 
         {/* View Mode */}
@@ -134,6 +175,45 @@ export default function SettingsScreen() {
         {/* Reading Theme */}
         <View className="mt-sm">
           <ThemePicker />
+        </View>
+
+        <SectionHeader title="About" />
+
+        <View className="rounded-app-lg overflow-hidden bg-surface dark:bg-surface-dark">
+          {/* Terms */}
+          <Pressable
+            className="flex-row items-center justify-between px-md py-3.5"
+            style={{ borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}
+            onPress={() => Linking.openURL('https://example.com/terms')}
+          >
+            <Text className="text-base text-black dark:text-white">Terms of Use</Text>
+            <Text className="text-base text-text-secondary dark:text-text-secondary-dark">›</Text>
+          </Pressable>
+
+          {/* Privacy Policy */}
+          <Pressable
+            className="flex-row items-center justify-between px-md py-3.5"
+            style={{ borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}
+            onPress={() => Linking.openURL('https://example.com/privacy')}
+          >
+            <Text className="text-base text-black dark:text-white">Privacy Policy</Text>
+            <Text className="text-base text-text-secondary dark:text-text-secondary-dark">›</Text>
+          </Pressable>
+
+          {/* Version */}
+          <View
+            className="flex-row items-center justify-between px-md py-3.5"
+            style={{ borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}
+          >
+            <Text className="text-base text-black dark:text-white">Version</Text>
+            <Text className="text-base text-text-secondary dark:text-text-secondary-dark">1.0.0</Text>
+          </View>
+
+          {/* Made by */}
+          <View className="flex-row items-center justify-between px-md py-3.5">
+            <Text className="text-base text-black dark:text-white">Made by</Text>
+            <Text className="text-base text-text-secondary dark:text-text-secondary-dark">Evans Yu</Text>
+          </View>
         </View>
 
         <View className="h-xxl" />

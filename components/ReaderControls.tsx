@@ -113,7 +113,7 @@ function ReaderControls({
           {/* Settings button */}
           <Pressable
             className="w-9 h-9 justify-center items-center"
-            onPress={() => router.push('/reader-settings')}
+            onPress={() => router.push(`/reader-settings?bookId=${book.id}`)}
             hitSlop={12}
           >
             <Ionicons name="settings-sharp" size={20} color="#FFFFFF" />

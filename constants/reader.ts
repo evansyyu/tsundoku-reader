@@ -166,6 +166,7 @@ export const HORIZONTAL_SCROLL_CSS = `
     height: auto !important;
     min-height: auto !important;
     overflow-x: hidden !important;
+    text-align: left !important;
   }
 `;
 
@@ -214,6 +215,47 @@ export const VERTICAL_SCROLL_CSS = `
 `;
 
 /**
+ * CSS for blurred images (spoiler prevention).
+ * Images are wrapped in a `.blur-wrapper` by the bridge JS.
+ */
+export const BLUR_IMAGES_CSS = `
+  .blur-wrapper {
+    position: relative;
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+  }
+  .blur-wrapper img {
+    display: block !important;
+    transition: filter 0.3s ease;
+  }
+  .blur-wrapper.blurred img {
+    filter: blur(20px);
+    -webkit-filter: blur(20px);
+  }
+  .blur-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #FFFFFF;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 28px;
+    font-weight: 600;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: 1;
+    white-space: nowrap;
+  }
+  .blur-wrapper.blurred .blur-overlay {
+    opacity: 1;
+  }
+`;
+
+/**
  * JavaScript bridge injected into the WebView to handle
  * pagination, navigation, and communication with React Native.
  */
@@ -241,11 +283,10 @@ export const READER_BRIDGE_JS = `
     } catch(e) {}
   };
 
-  console.log('[Bridge] IIFE entered, ReactNativeWebView available:', !!window.ReactNativeWebView);
-
   let isVertical = false;
   // Replaced at runtime via String.replace() in EpubReader
   let isPaginated = __PAGINATED__;
+  let blurImages = __BLUR_IMAGES__;
   let currentPage = 0;
   let totalPages = 1;
   let pagePitch = 0; // horizontal distance between consecutive pages
@@ -352,19 +393,12 @@ export const READER_BRIDGE_JS = `
 
     maxScroll = scrollSize - clientSize;
 
-    console.log('[Bridge] calculatePages: isVertical=' + isVertical +
-      ', pagePitch=' + pagePitch +
-      ', scrollSize=' + scrollSize +
-      ', clientSize=' + clientSize +
-      ', maxScroll=' + maxScroll);
-
     if (pagePitch <= 0) {
       totalPages = 1;
       return;
     }
 
     totalPages = maxScroll > 0 ? 1 + Math.round(maxScroll / pagePitch) : 1;
-    console.log('[Bridge] totalPages=' + totalPages);
   }
 
   /**
@@ -591,7 +625,7 @@ export const READER_BRIDGE_JS = `
       sel.removeAllRanges();
       sel.addRange(range);
     } catch (err) {
-      console.log('[Bridge] highlightDictionary error: ' + err.message);
+      // highlight failed silently
     }
   }
 
@@ -611,7 +645,6 @@ export const READER_BRIDGE_JS = `
     if (!dictEnabled) {
       clearDictionaryHighlight();
     }
-    console.log('[Bridge] dictionary enabled:', dictEnabled);
   }
 
   // Store the surrounding-text offset for mapping highlights back
@@ -665,8 +698,6 @@ export const READER_BRIDGE_JS = `
       var extracted = extractSurroundingText(result.node, result.offset, 20);
       dictSurroundingOffset = extracted.offset;
 
-      console.log('[Bridge] Long press: text="' + extracted.text + '", offset=' + extracted.offset);
-
       sendMessage({
         type: 'dictionaryLookup',
         text: extracted.text,
@@ -693,13 +724,20 @@ export const READER_BRIDGE_JS = `
       if (Math.abs(dx) >= SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy)) {
         swipeHandled = true;
 
-        // For Japanese RTL reading (and matching the user's expectation):
-        //   swipe right (dx > 0) → next page (reading forward)
-        //   swipe left  (dx < 0) → previous page (reading backward)
-        if (dx > 0) {
-          nextPage();
+        if (isVertical) {
+          // Vertical RTL reading: swipe right → next, swipe left → prev
+          if (dx > 0) {
+            nextPage();
+          } else {
+            prevPage();
+          }
         } else {
-          prevPage();
+          // Horizontal LTR reading: swipe left → next, swipe right → prev
+          if (dx < 0) {
+            nextPage();
+          } else {
+            prevPage();
+          }
         }
       }
     }
@@ -834,10 +872,7 @@ export const READER_BRIDGE_JS = `
    */
   function scrollToChapter(chapterIndex, smooth) {
     var section = document.querySelector('.chapter-section[data-chapter="' + chapterIndex + '"]');
-    if (!section) {
-      console.log('[Bridge] scrollToChapter: section ' + chapterIndex + ' not found');
-      return;
-    }
+    if (!section) return;
 
     // Update reported chapter immediately to avoid bouncing
     lastReportedChapter = chapterIndex;
@@ -943,7 +978,6 @@ export const READER_BRIDGE_JS = `
           // disable column layout on body and center the SVG.
           // In continuous mode we never override styles because
           // all chapters share the same document.
-          console.log('[Bridge] Full-page SVG detected, disabling columns');
           document.body.style.columnWidth = 'auto';
           document.body.style.columns = 'auto';
           document.body.style.overflow = 'hidden';
@@ -987,6 +1021,96 @@ export const READER_BRIDGE_JS = `
   }
 
   /**
+   * Sample an image's average brightness (0-255) via an offscreen canvas.
+   * Calls back with the perceived luminance value.
+   */
+  function getImageBrightness(img, callback) {
+    try {
+      var canvas = document.createElement('canvas');
+      var ctx = canvas.getContext('2d');
+      var w = Math.min(img.naturalWidth || 50, 50);
+      var h = Math.min(img.naturalHeight || 50, 50);
+      if (w <= 0 || h <= 0) { callback(128); return; }
+      canvas.width = w;
+      canvas.height = h;
+      ctx.drawImage(img, 0, 0, w, h);
+      var data = ctx.getImageData(0, 0, w, h).data;
+      var sum = 0;
+      var count = 0;
+      for (var p = 0; p < data.length; p += 16) {
+        sum += 0.299 * data[p] + 0.587 * data[p+1] + 0.114 * data[p+2];
+        count++;
+      }
+      callback(count > 0 ? sum / count : 128);
+    } catch(e) {
+      callback(128);
+    }
+  }
+
+  /**
+   * Set overlay text/background color based on image brightness
+   * so the label is always readable against the blurred image.
+   */
+  function applyOverlayColor(img, overlay) {
+    getImageBrightness(img, function(brightness) {
+      if (brightness > 128) {
+        overlay.style.color = '#000000';
+        overlay.style.background = 'rgba(255, 255, 255, 0.45)';
+      } else {
+        overlay.style.color = '#FFFFFF';
+        overlay.style.background = 'rgba(0, 0, 0, 0.4)';
+      }
+    });
+  }
+
+  /**
+   * Wrap each <img> in a blur container with a spoiler overlay.
+   * Overlay text color adapts to image brightness for readability.
+   * Tapping toggles the blur on/off.
+   */
+  function setupImageBlur() {
+    var imgs = document.querySelectorAll('img');
+    for (var i = 0; i < imgs.length; i++) {
+      var img = imgs[i];
+      if (img.closest && img.closest('.blur-wrapper')) continue;
+
+      var wrapper = document.createElement('div');
+      wrapper.className = 'blur-wrapper blurred';
+
+      var overlay = document.createElement('div');
+      overlay.className = 'blur-overlay';
+      overlay.textContent = '\u30CD\u30BF\u30D0\u30EC';
+
+      img.parentNode.insertBefore(wrapper, img);
+      wrapper.appendChild(img);
+      wrapper.appendChild(overlay);
+
+      // Adapt overlay color to image brightness
+      (function(imgEl, overlayEl) {
+        if (imgEl.complete && imgEl.naturalWidth > 0) {
+          applyOverlayColor(imgEl, overlayEl);
+        } else {
+          imgEl.addEventListener('load', function() {
+            applyOverlayColor(imgEl, overlayEl);
+          });
+        }
+      })(img, overlay);
+
+      (function(w) {
+        w.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (w.classList.contains('blurred')) {
+            w.classList.remove('blurred');
+          } else {
+            w.classList.add('blurred');
+          }
+        });
+      })(wrapper);
+    }
+  }
+
+  /**
    * Wait for all images to load, then recalculate pages.
    * This is critical because images change content dimensions.
    */
@@ -1022,13 +1146,11 @@ export const READER_BRIDGE_JS = `
    */
   function init() {
     try {
-      console.log('[Bridge] init start, isPaginated=' + isPaginated + ', readyState=' + document.readyState);
       detectWritingMode();
-      console.log('[Bridge] isVertical=' + isVertical);
       normalizeImages();
+      if (blurImages) setupImageBlur();
       calculatePages();
       currentPage = 0;
-      console.log('[Bridge] totalPages=' + totalPages + ', RNWebView=' + !!window.ReactNativeWebView);
 
       // In continuous mode, ensure the scroll starts at the reading origin.
       // For vertical-rl the browser may initialise scrollLeft at the wrong end.
@@ -1045,9 +1167,8 @@ export const READER_BRIDGE_JS = `
       sendMessage({ type: 'ready' });
       sendPageInfo();
       watchImages();
-      console.log('[Bridge] init complete');
     } catch (err) {
-      console.error('[Bridge] init error: ' + err.message);
+      // init failed
     }
   }
 

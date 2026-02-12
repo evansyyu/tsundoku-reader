@@ -8,6 +8,7 @@
 
 import {
   BASE_READER_CSS,
+  BLUR_IMAGES_CSS,
   HORIZONTAL_PAGINATED_CSS,
   HORIZONTAL_SCROLL_CSS,
   VERTICAL_PAGINATED_CSS,
@@ -26,6 +27,7 @@ export interface ChapterHtmlOptions {
   pageMargin?: number;
   columnGap?: number;
   showFurigana?: boolean;
+  blurImages?: boolean;
 }
 
 /**
@@ -55,6 +57,7 @@ export function buildChapterHtml(
     pageMargin = DEFAULT_PAGE_MARGIN,
     columnGap = DEFAULT_COLUMN_GAP,
     showFurigana = true,
+    blurImages = false,
   } = options;
 
   // Build the CSS by replacing template variables
@@ -77,6 +80,11 @@ export function buildChapterHtml(
   // Hide furigana if disabled
   if (!showFurigana) {
     css += `\n  rt { display: none !important; }\n  rp { display: none !important; }\n`;
+  }
+
+  // Blur images for spoiler prevention (JS wrapper added by bridge)
+  if (blurImages) {
+    css += BLUR_IMAGES_CSS;
   }
 
   // Extract the <body> content from the XHTML if it's a full document,
@@ -123,6 +131,7 @@ export function buildContinuousHtml(
     pageMargin = DEFAULT_PAGE_MARGIN,
     columnGap = DEFAULT_COLUMN_GAP,
     showFurigana = true,
+    blurImages = false,
   } = options;
 
   let css = BASE_READER_CSS
@@ -139,6 +148,11 @@ export function buildContinuousHtml(
   // Hide furigana if disabled
   if (!showFurigana) {
     css += `\n  rt { display: none !important; }\n  rp { display: none !important; }\n`;
+  }
+
+  // Blur images for spoiler prevention (JS wrapper added by bridge)
+  if (blurImages) {
+    css += BLUR_IMAGES_CSS;
   }
 
   // Add spacing between chapter sections

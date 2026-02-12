@@ -7,6 +7,7 @@
  * (a React Native view embedded via UIViewRepresentable).
  */
 import React, { useMemo } from 'react';
+import { Linking } from 'react-native';
 import {
   Host,
   Form,
@@ -14,9 +15,11 @@ import {
   Picker,
   Slider,
   Switch,
+  Button,
   HStack,
   VStack,
   Text,
+  LabeledContent,
 } from '@expo/ui/swift-ui';
 import { frame } from '@expo/ui/swift-ui/modifiers';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -112,6 +115,20 @@ export default function SettingsScreen() {
               onValueChange={(value) => updateReadingSettings({ showFurigana: value })}
             />
 
+            {/* Blur Images */}
+            <Switch
+              label="Blur Images"
+              value={reading.blurImages}
+              onValueChange={(value) => updateReadingSettings({ blurImages: value })}
+            />
+
+            {/* Progress Counter */}
+            <Switch
+              label="Progress Counter"
+              value={reading.showProgressIndicator}
+              onValueChange={(value) => updateReadingSettings({ showProgressIndicator: value })}
+            />
+
             {/* Page View */}
             <VStack spacing={4}>
               <Text>Page View</Text>
@@ -133,6 +150,27 @@ export default function SettingsScreen() {
             <VStack modifiers={[frame({ height: 120 })]}>
               <ThemePicker />
             </VStack>
+          </Section>
+
+          <Section title="About">
+            <Button
+              variant="borderless"
+              onPress={() => Linking.openURL('https://example.com/terms')}
+            >
+              Terms of Use
+            </Button>
+            <Button
+              variant="borderless"
+              onPress={() => Linking.openURL('https://example.com/privacy')}
+            >
+              Privacy Policy
+            </Button>
+            <LabeledContent label="Version">
+              <Text color="secondary">1.0.0</Text>
+            </LabeledContent>
+            <LabeledContent label="Made by">
+              <Text color="secondary">Evans Yu</Text>
+            </LabeledContent>
           </Section>
       </Form>
     </Host>

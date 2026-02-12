@@ -42,8 +42,8 @@ export function BooksProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(true);
       const allBooks = await getAllBooks();
       setBooks(allBooks);
-    } catch (error) {
-      console.error('[BooksContext] Failed to load books:', error);
+    } catch {
+      // load failed silently
     } finally {
       setIsLoading(false);
     }
@@ -63,8 +63,8 @@ export function BooksProvider({ children }: { children: React.ReactNode }) {
       if (bookToDelete) {
         await deleteBookFiles(bookToDelete);
       }
-    } catch (error) {
-      console.error('[BooksContext] Failed to delete book:', error);
+    } catch {
+      // delete failed silently
     }
   }, [books]);
 
@@ -75,9 +75,7 @@ export function BooksProvider({ children }: { children: React.ReactNode }) {
     );
 
     // Fire-and-forget DB update
-    dbUpdateLastRead(id).catch((err) =>
-      console.error('[BooksContext] Failed to update last read:', err)
-    );
+    dbUpdateLastRead(id).catch(() => {});
   }, []);
 
   const saveReadingProgress = useCallback(
@@ -92,9 +90,7 @@ export function BooksProvider({ children }: { children: React.ReactNode }) {
       );
 
       // Fire-and-forget DB update
-      dbUpdateProgress(id, chapterIndex, pageNumber).catch((err) =>
-        console.error('[BooksContext] Failed to save progress:', err)
-      );
+      dbUpdateProgress(id, chapterIndex, pageNumber).catch(() => {});
     },
     []
   );

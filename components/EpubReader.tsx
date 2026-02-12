@@ -103,7 +103,10 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
     let cancelled = false;
 
     const isContinuous = settings.viewMode === 'continuous';
-    const isVertical = book.language === 'ja' || book.pageProgressionDirection === 'rtl';
+    const isJapaneseBook = book.language === 'ja' || book.language.startsWith('ja-');
+    const isVertical = isJapaneseBook
+      ? settings.japaneseTextDirection !== 'horizontal'
+      : book.pageProgressionDirection === 'rtl';
     const fontSize = FONT_SIZE_SCALE[settings.fontSizeScale] ?? 18;
 
     const commonOpts = {
@@ -115,6 +118,7 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
       fontFamily: settings.fontFamily,
       pageMargin: settings.pageMargin,
       showFurigana: settings.showFurigana,
+      blurImages: settings.blurImages,
     };
 
     // Build a fingerprint from all values that affect the rendered HTML so we
@@ -133,7 +137,6 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
           continuousSettingsFingerprint.current === fingerprint
         ) {
           if (chapterIndex !== lastKnownChapterRef.current) {
-            console.log(`[EpubReader] Continuous already loaded, scrolling to ch ${chapterIndex}`);
             lastKnownChapterRef.current = chapterIndex;
             setTimeout(() => {
               webViewRef.current?.injectJavaScript(
@@ -146,7 +149,6 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
           return;
         }
 
-        console.log(`[EpubReader] Loading all ${spine.length} chapters for continuous mode`);
         try {
           const allContents: string[] = [];
           for (const item of spine) {
@@ -169,7 +171,6 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
           continuousLoadedBookId.current = book.id;
           continuousSettingsFingerprint.current = fingerprint;
         } catch (error) {
-          console.error('[EpubReader] Failed to load chapters:', error);
           onMessageRef.current({
             type: 'error',
             message: `Failed to load chapters: ${error}`,
@@ -180,9 +181,7 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
         continuousLoadedBookId.current = null;
         continuousSettingsFingerprint.current = null;
 
-        console.log(`[EpubReader] loadChapter called: chapterIndex=${chapterIndex}, spineLength=${spine.length}`);
         if (chapterIndex < 0 || chapterIndex >= spine.length) {
-          console.warn(`[EpubReader] chapterIndex ${chapterIndex} out of range`);
           return;
         }
 
@@ -207,7 +206,6 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
           const newBaseUrl = chapterPath.substring(0, lastSlash + 1);
           setBaseUrl(newBaseUrl);
         } catch (error) {
-          console.error('[EpubReader] Failed to load chapter:', error);
           onMessageRef.current({
             type: 'error',
             message: `Failed to load chapter: ${error}`,
@@ -228,22 +226,13 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
     startAtEndRef.current = startAtEnd;
   }, [startAtEnd]);
 
-  // Keep initialPageRef in sync with prop
-  useEffect(() => {
-    initialPageRef.current = initialPage;
-  }, [initialPage]);
-
   const handleWebViewMessage = useCallback(
     (event: WebViewMessageEvent) => {
       try {
         const data = JSON.parse(event.nativeEvent.data);
 
-        // Forward WebView console logs to Metro for debugging
-        if (data.type === 'console') {
-          const prefix = data.level === 'error' ? 'ERROR' : 'LOG';
-          console.log(`[WebView ${prefix}] ${data.msg}`);
-          return;
-        }
+        // Ignore WebView console forwarding messages
+        if (data.type === 'console') return;
 
         if (data.type === 'centerTap') {
           onCenterTap();
@@ -275,8 +264,8 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
         }
 
         onMessage(data);
-      } catch (err) {
-        console.warn('[EpubReader] Failed to parse WebView message:', err);
+      } catch {
+        // ignore non-JSON messages
       }
     },
     [onMessage, onCenterTap]
@@ -284,7 +273,9 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
 
   // Keep bridge script in a ref so the onLoadEnd callback can use the latest version
   const bridgeScriptRef = useRef('');
-  bridgeScriptRef.current = READER_BRIDGE_JS.replace('__PAGINATED__', String(settings.viewMode === 'paginated'));
+  bridgeScriptRef.current = READER_BRIDGE_JS
+    .replace('__PAGINATED__', String(settings.viewMode === 'paginated'))
+    .replace('__BLUR_IMAGES__', String(settings.blurImages));
 
   // Track whether dictionary should be enabled for this book
   const isJapanese = book.language === 'ja' || book.language.startsWith('ja-');

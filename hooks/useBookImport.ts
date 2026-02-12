@@ -77,7 +77,6 @@ export function useBookImport(): UseBookImportResult {
       const message =
         err instanceof Error ? err.message : 'Failed to import EPUB';
       setError(message);
-      console.error('[useBookImport] Import failed:', err);
       await errorNotification();
     } finally {
       setIsImporting(false);

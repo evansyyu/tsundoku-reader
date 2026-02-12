@@ -15,6 +15,9 @@ const DEFAULT_READING_SETTINGS: ReadingSettings = {
   viewMode: 'paginated',
   pageMargin: DEFAULT_PAGE_MARGIN,
   showFurigana: true,
+  japaneseTextDirection: 'vertical',
+  blurImages: false,
+  showProgressIndicator: true,
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -41,7 +44,14 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<AppSettings>(() => {
     // Load persisted settings from MMKV on init
     const saved = mmkv.getJSON<AppSettings>(SETTINGS_KEY);
-    return saved ? { ...DEFAULT_SETTINGS, ...saved } : DEFAULT_SETTINGS;
+    if (saved) {
+      return {
+        ...DEFAULT_SETTINGS,
+        ...saved,
+        reading: { ...DEFAULT_READING_SETTINGS, ...(saved.reading ?? {}) },
+      };
+    }
+    return DEFAULT_SETTINGS;
   });
 
   // Persist settings to MMKV whenever they change

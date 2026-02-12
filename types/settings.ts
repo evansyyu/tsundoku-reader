@@ -3,6 +3,7 @@
  */
 
 export type ViewMode = 'paginated' | 'continuous';
+export type TextDirection = 'vertical' | 'horizontal';
 
 export interface ReadingTheme {
   id: string;
@@ -28,6 +29,12 @@ export interface ReadingSettings {
   pageMargin: number;
   /** Whether to display furigana (ruby text) */
   showFurigana: boolean;
+  /** Text direction for Japanese books ('vertical' = default, 'horizontal' = LTR) */
+  japaneseTextDirection: TextDirection;
+  /** Whether to blur images (for spoiler prevention) */
+  blurImages: boolean;
+  /** Whether to show the progress counter in the bottom-right of the reader */
+  showProgressIndicator: boolean;
 }
 
 export interface AppSettings {
