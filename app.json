@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "tsundoku",
-    "slug": "tsundoku-reader",
+    "slug": "yomu-reader",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -25,7 +25,11 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#ffffff",
+        "dark": {
+          "foregroundImage": "./assets/adaptive-icon-dark.png",
+          "backgroundColor": "#1a1a1a"
+        }
       },
       "edgeToEdgeEnabled": true,
       "package": "com.tsundoku.reader"
@@ -50,13 +54,15 @@
           "iCloudContainerEnvironment": "Production"
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      "./plugins/withAndroidAdaptiveIconDark"
     ],
     "extra": {
       "router": {},
       "eas": {
         "projectId": "135a15bf-cd5f-41f4-9704-522441fd0e00"
       }
-    }
+    },
+    "owner": "glitchedgadget"
   }
 }
