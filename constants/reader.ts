@@ -111,7 +111,7 @@ export const VERTICAL_PAGINATED_CSS = `
 
   body {
     margin: 0;
-    padding: var(--page-margin);
+    padding: var(--page-margin) var(--page-margin) var(--page-margin) 0;
     width: 100vw;
     height: 100vh;
     column-width: calc(100vh - 2 * var(--page-margin));
@@ -738,11 +738,12 @@ export const READER_BRIDGE_JS = `
     }
   });
 
-  // ── Continuous scroll: chapter detection ─────────────────────
+  // ── Continuous scroll: progress & chapter detection ──────────
   // All chapters are loaded at once in continuous mode.
-  // Detect which chapter is currently visible and report to RN.
+  // Detect which chapter is currently visible and report scroll progress to RN.
 
   var lastReportedChapter = -1;
+  var lastReportedScrollPage = -1;
 
   /**
    * Detect which .chapter-section is most visible and report to RN.
@@ -787,7 +788,49 @@ export const READER_BRIDGE_JS = `
   }
 
   /**
+   * Report virtual page progress for continuous mode based on scroll position.
+   */
+  function reportScrollProgress() {
+    if (isPaginated) return;
+
+    var scrollEl = document.scrollingElement || document.documentElement;
+    var scrollPos, scrollTotal, viewportSize;
+
+    if (isVertical) {
+      // vertical-rl: content scrolls horizontally (right-to-left)
+      // scrollLeft is 0 at the start (rightmost) and negative as you scroll left
+      scrollPos = Math.abs(scrollEl.scrollLeft);
+      scrollTotal = scrollEl.scrollWidth;
+      viewportSize = window.innerWidth;
+    } else {
+      // horizontal-tb: content scrolls vertically
+      scrollPos = scrollEl.scrollTop;
+      scrollTotal = scrollEl.scrollHeight;
+      viewportSize = window.innerHeight;
+    }
+
+    var maxScroll = scrollTotal - viewportSize;
+    if (maxScroll <= 0 || viewportSize <= 0) {
+      if (lastReportedScrollPage !== 0) {
+        lastReportedScrollPage = 0;
+        sendMessage({ type: 'scrollProgress', currentPage: 0, totalPages: 1 });
+      }
+      return;
+    }
+
+    var vTotalPages = Math.max(1, Math.round(maxScroll / viewportSize) + 1);
+    var vCurrentPage = Math.min(Math.round(scrollPos / viewportSize), vTotalPages - 1);
+
+    if (vCurrentPage !== lastReportedScrollPage) {
+      lastReportedScrollPage = vCurrentPage;
+      sendMessage({ type: 'scrollProgress', currentPage: vCurrentPage, totalPages: vTotalPages });
+    }
+  }
+
+  /**
    * Scroll to a specific chapter section in continuous mode.
+   * In vertical-rl, block='start' aligns the section's right edge (reading start)
+   * with the viewport's right edge.
    */
   function scrollToChapter(chapterIndex, smooth) {
     var section = document.querySelector('.chapter-section[data-chapter="' + chapterIndex + '"]');
@@ -801,12 +844,12 @@ export const READER_BRIDGE_JS = `
 
     section.scrollIntoView({
       behavior: smooth !== false ? 'smooth' : 'instant',
-      block: isVertical ? 'nearest' : 'start',
-      inline: isVertical ? 'start' : 'nearest'
+      block: 'start',
+      inline: 'start'
     });
   }
 
-  // Throttled scroll listener for chapter detection
+  // Throttled scroll listener for chapter detection + progress
   var scrollTimer = null;
   window.addEventListener('scroll', function() {
     if (isPaginated) return;
@@ -814,6 +857,7 @@ export const READER_BRIDGE_JS = `
     scrollTimer = setTimeout(function() {
       scrollTimer = null;
       detectCurrentChapter();
+      reportScrollProgress();
     }, 200);
   }, { passive: true });
 
@@ -985,6 +1029,18 @@ export const READER_BRIDGE_JS = `
       calculatePages();
       currentPage = 0;
       console.log('[Bridge] totalPages=' + totalPages + ', RNWebView=' + !!window.ReactNativeWebView);
+
+      // In continuous mode, ensure the scroll starts at the reading origin.
+      // For vertical-rl the browser may initialise scrollLeft at the wrong end.
+      if (!isPaginated) {
+        var scrollEl = document.scrollingElement || document.documentElement;
+        if (isVertical) {
+          // vertical-rl: reading starts at scrollLeft = 0 (rightmost position)
+          scrollEl.scrollLeft = 0;
+        } else {
+          scrollEl.scrollTop = 0;
+        }
+      }
 
       sendMessage({ type: 'ready' });
       sendPageInfo();

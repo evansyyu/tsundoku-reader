@@ -13,6 +13,7 @@ import { FONT_FAMILIES, FONT_SIZE_MAX, FONT_SIZE_MIN } from '@/constants/typogra
 import { LINE_HEIGHT_OPTIONS } from '@/constants/typography';
 import type { ViewMode } from '@/types/settings';
 import Slider from '@/components/Slider';
+import ToggleSwitch from '@/components/ToggleSwitch';
 import ThemePicker from '@/components/ThemePicker';
 
 export default function SettingsScreen() {
@@ -89,6 +90,26 @@ export default function SettingsScreen() {
               )}
             </Pressable>
           ))}
+        </View>
+
+        {/* Furigana Toggle */}
+        <View className="rounded-app-lg overflow-hidden bg-surface dark:bg-surface-dark mt-sm">
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingHorizontal: 16,
+              height: 44,
+            }}
+          >
+            <Text className="text-base text-black dark:text-white">Furigana</Text>
+            <ToggleSwitch
+              value={reading.showFurigana}
+              onValueChange={(v) => updateReadingSettings({ showFurigana: v })}
+              color={colors.tint}
+            />
+          </View>
         </View>
 
         {/* View Mode */}

@@ -49,6 +49,10 @@ export default function ReaderScreen() {
   const [isReady, setIsReady] = useState(false);
   const [startAtEnd, setStartAtEnd] = useState(false);
 
+  // Per-chapter page counts for book-wide progress in paginated mode.
+  // Maps chapterIndex -> totalPages for that chapter.
+  const chapterPageCountsRef = useRef<Map<number, number>>(new Map());
+
   // Track whether this is the first load (to restore saved page)
   const isInitialLoad = useRef(true);
 
@@ -92,14 +96,18 @@ export default function ReaderScreen() {
           break;
         case 'pageInfo':
         case 'pageChange':
-          setCurrentLocation((prev) => ({
-            ...prev,
-            pageNumber: message.currentPage,
-            chapterProgress:
-              message.totalPages > 0
-                ? message.currentPage / message.totalPages
-                : 0,
-          }));
+          setCurrentLocation((prev) => {
+            // Record this chapter's page count for book-wide progress
+            chapterPageCountsRef.current.set(prev.chapterIndex, message.totalPages);
+            return {
+              ...prev,
+              pageNumber: message.currentPage,
+              chapterProgress:
+                message.totalPages > 0
+                  ? message.currentPage / message.totalPages
+                  : 0,
+            };
+          });
           setTotalPages(message.totalPages);
           break;
         case 'chapterEnd': {
@@ -148,6 +156,14 @@ export default function ReaderScreen() {
               chapterIndex: message.chapterIndex,
             };
           });
+          break;
+        case 'scrollProgress':
+          // Continuous mode: bridge reports virtual page from scroll position.
+          setCurrentLocation((prev) => ({
+            ...prev,
+            pageNumber: message.currentPage,
+          }));
+          setTotalPages(message.totalPages);
           break;
         case 'dictionaryLookup':
           handleDictionaryLookup(message.text, message.offset);
@@ -338,12 +354,65 @@ export default function ReaderScreen() {
         />
       </View>
 
+      {/* Progress indicator - always visible at bottom-right */}
+      {isReady && !controlsVisible && (() => {
+        let globalPage: number;
+        let globalTotal: number;
+
+        if (settings.reading.viewMode === 'paginated') {
+          // Build book-wide page numbers from per-chapter counts.
+          // For chapters not yet visited, estimate using the average of known counts.
+          const spineLen = book.spine.length;
+          const known = chapterPageCountsRef.current;
+          let knownSum = 0;
+          let knownCount = 0;
+          known.forEach((pages) => { knownSum += pages; knownCount++; });
+          const avgPages = knownCount > 0 ? knownSum / knownCount : totalPages;
+
+          let pagesBeforeCurrent = 0;
+          for (let i = 0; i < currentLocation.chapterIndex; i++) {
+            pagesBeforeCurrent += known.get(i) ?? avgPages;
+          }
+
+          globalPage = Math.round(pagesBeforeCurrent) + currentLocation.pageNumber + 1;
+          globalTotal = Math.round(pagesBeforeCurrent)
+            + (known.get(currentLocation.chapterIndex) ?? totalPages);
+          for (let i = currentLocation.chapterIndex + 1; i < spineLen; i++) {
+            globalTotal += Math.round(known.get(i) ?? avgPages);
+          }
+        } else {
+          // Continuous mode: scrollProgress already covers the whole book
+          globalPage = currentLocation.pageNumber + 1;
+          globalTotal = totalPages;
+        }
+
+        const pct = globalTotal > 0
+          ? Math.round((globalPage / globalTotal) * 100)
+          : 0;
+
+        return (
+          <View
+            className="absolute z-10"
+            style={{ bottom: insets.bottom + 8, right: 12 }}
+            pointerEvents="none"
+          >
+            <Text
+              className="text-[10px] text-right"
+              style={{ color: readingTheme.textColor, opacity: 0.4 }}
+            >
+              {globalPage}/{globalTotal}{'  '}{pct}%
+            </Text>
+          </View>
+        );
+      })()}
+
       <ReaderControls
         visible={controlsVisible}
         book={book}
         currentPage={currentLocation.pageNumber}
         totalPages={totalPages}
         chapterIndex={currentLocation.chapterIndex}
+        viewMode={settings.reading.viewMode}
         onBack={handleBack}
         onDismiss={handleDismissControls}
         onGoToPage={handleGoToPage}

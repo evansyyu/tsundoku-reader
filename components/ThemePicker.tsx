@@ -7,7 +7,7 @@ import type { ReadingTheme } from '@/types/settings';
 /**
  * Reading theme picker: shows color swatches for each available theme.
  */
-export default function ThemePicker() {
+export default function ThemePicker({ showLabel = true }: { showLabel?: boolean } = {}) {
   const { colors } = useTheme();
   const { settings, updateReadingSettings, allThemes } = useSettings();
 
@@ -15,7 +15,7 @@ export default function ThemePicker() {
 
   return (
     <View className="rounded-app-lg p-md bg-surface dark:bg-surface-dark">
-      <Text className="text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-2">Reader Theme</Text>
+      {showLabel && <Text className="text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-2">Reader Theme</Text>}
       {/* StyleSheet kept: gap uses computed value (Spacing.md - 2 = 14) */}
       <View className="flex-row flex-wrap" style={styles.row}>
         {allThemes.map((theme) => (

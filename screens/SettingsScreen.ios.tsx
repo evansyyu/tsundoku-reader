@@ -13,6 +13,7 @@ import {
   Section,
   Picker,
   Slider,
+  Switch,
   HStack,
   VStack,
   Text,
@@ -102,6 +103,13 @@ export default function SettingsScreen() {
               }}
               variant="menu"
               label="Font Family"
+            />
+
+            {/* Furigana */}
+            <Switch
+              label="Furigana"
+              value={reading.showFurigana}
+              onValueChange={(value) => updateReadingSettings({ showFurigana: value })}
             />
 
             {/* Page View */}

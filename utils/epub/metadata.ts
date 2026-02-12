@@ -28,9 +28,10 @@ export async function ensureStorageDirs(): Promise<void> {
  * Import an EPUB file: copy, parse, extract, and return a Book object.
  *
  * @param sourceUri - The URI from the document picker (may be a cache URI)
+ * @param originalFileName - The original file name from the device
  * @returns A fully populated Book object ready for storage
  */
-export async function importEpub(sourceUri: string): Promise<Book> {
+export async function importEpub(sourceUri: string, originalFileName: string): Promise<Book> {
   await ensureStorageDirs();
 
   const bookId = Crypto.randomUUID();
@@ -71,6 +72,7 @@ export async function importEpub(sourceUri: string): Promise<Book> {
     coverPath,
     filePath: bookDir + parsed.basePath,
     epubPath,
+    originalFileName,
     language: parsed.metadata.language,
     spine: parsed.spine,
     pageProgressionDirection: effectivePpd as 'ltr' | 'rtl' | 'default',

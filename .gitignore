@@ -40,6 +40,5 @@ yarn-error.*
 /ios
 /android
 
-#dictionaries
-assets/dictionary_yomu.db
-assets/dictionary_yomu_small.db
+# dictionaries (tracked via Git LFS)
+# assets/dictionary_yomu.db

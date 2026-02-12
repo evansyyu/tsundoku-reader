@@ -16,7 +16,11 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.yomu.reader",
-      "usesIcloudStorage": true
+      "usesIcloudStorage": true,
+      "icon": "./assets/tsundoku.icon",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -47,6 +51,12 @@
         }
       ],
       "expo-sqlite"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "135a15bf-cd5f-41f4-9704-522441fd0e00"
+      }
+    }
   }
 }

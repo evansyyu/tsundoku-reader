@@ -41,6 +41,7 @@ function RootNavigator() {
             title: 'Chapters',
             headerTransparent: Platform.OS === 'ios',
             headerBlurEffect: glassAvailable ? undefined : isDark ? 'dark' : 'light',
+            headerTintColor: isDark ? '#FFFFFF' : '#000000',
             headerStyle: {
               backgroundColor: Platform.OS === 'ios' ? 'transparent' : colors.background,
             },
@@ -51,8 +52,8 @@ function RootNavigator() {
               Platform.OS === 'ios' ? (
                 <Pressable onPress={() => router.back()} hitSlop={12}>
                   <Ionicons
-                    name="close-circle"
-                    size={28}
+                    name="close-outline"
+                    size={36}
                     color={isDark ? '#FFFFFF' : '#8E8E93'}
                   />
                 </Pressable>
@@ -70,6 +71,36 @@ function RootNavigator() {
             title: '',
             headerTransparent: Platform.OS === 'ios',
             headerBlurEffect: glassAvailable ? undefined : isDark ? 'dark' : 'light',
+            headerStyle: {
+              backgroundColor: Platform.OS === 'ios' ? 'transparent' : colors.background,
+            },
+            contentStyle: {
+              backgroundColor: glassAvailable ? 'transparent' : colors.background,
+            },
+            headerLeft: () =>
+              Platform.OS === 'ios' ? (
+                <Pressable onPress={() => router.back()} hitSlop={12}>
+                  <Ionicons
+                    name="close-outline"
+                    size={36}
+                    color={isDark ? '#FFFFFF' : '#8E8E93'}
+                  />
+                </Pressable>
+              ) : undefined,
+          }}
+        />
+        <Stack.Screen
+          name="reader-settings"
+          options={{
+            presentation: Platform.OS === 'ios' ? 'formSheet' : 'modal',
+            sheetGrabberVisible: true,
+            sheetAllowedDetents: [0.7],
+            headerShown: true,
+            headerLargeTitle: false,
+            title: 'Settings',
+            headerTransparent: Platform.OS === 'ios',
+            headerBlurEffect: glassAvailable ? undefined : isDark ? 'dark' : 'light',
+            headerTintColor: isDark ? '#FFFFFF' : '#000000',
             headerStyle: {
               backgroundColor: Platform.OS === 'ios' ? 'transparent' : colors.background,
             },

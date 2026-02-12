@@ -26,7 +26,7 @@ export const BOOK_COVER_ASPECT_RATIO = 1.5;
 export const BOOK_COVER_HEIGHT = BOOK_CARD_WIDTH * BOOK_COVER_ASPECT_RATIO;
 
 /** Default page margin in the reader (px) */
-export const DEFAULT_PAGE_MARGIN = 24;
+export const DEFAULT_PAGE_MARGIN = 16;
 
 /** Default column gap in paginated mode (px) */
 export const DEFAULT_COLUMN_GAP = 40;
