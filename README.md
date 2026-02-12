@@ -1,4 +1,4 @@
-# Yomu Reader
+# Tsundoku Reader
 
 A production-ready iOS EPUB reader app specializing in Japanese and English text rendering with vertical/horizontal text support.
 
