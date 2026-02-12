@@ -114,9 +114,11 @@ function buildSenseHeaders(senses: DictionarySense[]) {
   const fieldLists = senses.map(s => splitTags(s.field, 'field'));
   const tagLists = senses.map(s => splitTags(s.tags, 'tags'));
 
-  const commonPOS = posLists.reduce((acc, l) => acc.filter(p => l.includes(p)));
-  const commonFields = fieldLists.reduce((acc, l) => acc.filter(f => l.includes(f)));
-  const commonTags = tagLists.reduce((acc, l) => acc.filter(t => l.includes(t)));
+  if (senses.length === 0) return { commonHeader: '', perSense: [] };
+
+  const commonPOS = posLists.reduce((acc, l) => acc.filter(p => l.includes(p)), posLists[0] ?? []);
+  const commonFields = fieldLists.reduce((acc, l) => acc.filter(f => l.includes(f)), fieldLists[0] ?? []);
+  const commonTags = tagLists.reduce((acc, l) => acc.filter(t => l.includes(t)), tagLists[0] ?? []);
 
   const perSense = senses.map((_, i) => {
     const prevPOS = i > 0 ? posLists[i - 1] : [];
@@ -367,8 +369,7 @@ function PitchAccentDisplay({
 
 const pitchStyles = StyleSheet.create({
   container: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: 'column',
     gap: 10,
     marginTop: 4,
   },

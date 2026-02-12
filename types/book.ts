@@ -36,6 +36,8 @@ export interface Book {
   filePath: string;
   /** Absolute path to the original .epub file */
   epubPath: string;
+  /** Original file name from the device (used for duplicate detection) */
+  originalFileName: string;
   /** Primary language code (e.g., 'ja', 'en') */
   language: string;
   /** JSON-serialized SpineItem[] */
@@ -59,6 +61,7 @@ export interface BookRow {
   cover_path: string | null;
   file_path: string;
   epub_path: string;
+  original_file_name: string | null;
   language: string;
   spine: string;
   page_progression_direction: string;

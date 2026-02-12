@@ -25,6 +25,7 @@ export interface ChapterHtmlOptions {
   fontFamily: string;
   pageMargin?: number;
   columnGap?: number;
+  showFurigana?: boolean;
 }
 
 /**
@@ -53,6 +54,7 @@ export function buildChapterHtml(
     fontFamily,
     pageMargin = DEFAULT_PAGE_MARGIN,
     columnGap = DEFAULT_COLUMN_GAP,
+    showFurigana = true,
   } = options;
 
   // Build the CSS by replacing template variables
@@ -70,6 +72,11 @@ export function buildChapterHtml(
     css += isPaginated ? VERTICAL_PAGINATED_CSS : VERTICAL_SCROLL_CSS;
   } else {
     css += isPaginated ? HORIZONTAL_PAGINATED_CSS : HORIZONTAL_SCROLL_CSS;
+  }
+
+  // Hide furigana if disabled
+  if (!showFurigana) {
+    css += `\n  rt { display: none !important; }\n  rp { display: none !important; }\n`;
   }
 
   // Extract the <body> content from the XHTML if it's a full document,
@@ -115,6 +122,7 @@ export function buildContinuousHtml(
     fontFamily,
     pageMargin = DEFAULT_PAGE_MARGIN,
     columnGap = DEFAULT_COLUMN_GAP,
+    showFurigana = true,
   } = options;
 
   let css = BASE_READER_CSS
@@ -127,6 +135,11 @@ export function buildContinuousHtml(
     .replace('{{COLUMN_GAP}}', String(columnGap));
 
   css += isVertical ? VERTICAL_SCROLL_CSS : HORIZONTAL_SCROLL_CSS;
+
+  // Hide furigana if disabled
+  if (!showFurigana) {
+    css += `\n  rt { display: none !important; }\n  rp { display: none !important; }\n`;
+  }
 
   // Add spacing between chapter sections
   const spacingProp = isVertical ? 'margin-left' : 'margin-bottom';

@@ -1,12 +1,15 @@
-import React, { memo } from 'react';
+import React, { memo, useCallback, useEffect, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import type { Book } from '@/types/book';
+import type { ViewMode } from '@/types/settings';
 import { Spacing } from '@/constants/layout';
 import Slider from '@/components/Slider';
+
+const AUTO_DISMISS_MS = 2000;
 
 interface ReaderControlsProps {
   visible: boolean;
@@ -14,6 +17,7 @@ interface ReaderControlsProps {
   currentPage: number;
   totalPages: number;
   chapterIndex: number;
+  viewMode: ViewMode;
   onBack: () => void;
   onDismiss: () => void;
   onGoToPage: (page: number) => void;
@@ -30,6 +34,7 @@ function ReaderControls({
   currentPage,
   totalPages,
   chapterIndex,
+  viewMode,
   onBack,
   onDismiss,
   onGoToPage,
@@ -37,6 +42,25 @@ function ReaderControls({
 }: ReaderControlsProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const resetTimer = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(onDismiss, AUTO_DISMISS_MS);
+  }, [onDismiss]);
+
+  // Start / restart timer whenever controls become visible
+  useEffect(() => {
+    if (visible) {
+      resetTimer();
+    } else if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [visible, resetTimer]);
 
   if (!visible) return null;
 
@@ -56,8 +80,9 @@ function ReaderControls({
 
         {/* Top bar - StyleSheet kept: paddingTop is dynamic safe area inset */}
         <View
-          className="flex-row items-center px-md pb-sm bg-black/70"
+          className="flex-row items-center px-md pb-sm bg-black/70 gap-md"
           style={{ paddingTop: insets.top + Spacing.xs }}
+          onTouchStart={resetTimer}
         >
           <Pressable
             className="w-9 h-9 justify-center items-center"
@@ -84,32 +109,44 @@ function ReaderControls({
           >
             <Ionicons name="list" size={22} color="#FFFFFF" />
           </Pressable>
+
+          {/* Settings button */}
+          <Pressable
+            className="w-9 h-9 justify-center items-center"
+            onPress={() => router.push('/reader-settings')}
+            hitSlop={12}
+          >
+            <Ionicons name="settings-sharp" size={20} color="#FFFFFF" />
+          </Pressable>
         </View>
 
         {/* Bottom bar - StyleSheet kept: paddingBottom is dynamic safe area inset */}
         <View
           className="px-lg pt-md bg-black/70"
           style={{ paddingBottom: insets.bottom + Spacing.sm }}
+          onTouchStart={resetTimer}
         >
-          <View className="flex-row items-center gap-sm">
-            <Text className="text-white text-[13px] font-medium min-w-[28px] text-center">
-              {currentPage + 1}
-            </Text>
-            <Slider
-              value={currentPage}
-              minimumValue={0}
-              maximumValue={Math.max(totalPages - 1, 0)}
-              step={1}
-              onValueChange={onGoToPage}
-              tintColor="#FFFFFF"
-              trackColor="rgba(255,255,255,0.3)"
-              style={{ flex: 1 }}
-              disabled={totalPages <= 1}
-            />
-            <Text className="text-white text-[13px] font-medium min-w-[28px] text-center">
-              {totalPages}
-            </Text>
-          </View>
+          {viewMode === 'paginated' && (
+            <View className="flex-row items-center gap-sm">
+              <Text className="text-white text-[13px] font-medium min-w-[28px] text-center">
+                {currentPage + 1}
+              </Text>
+              <Slider
+                value={currentPage}
+                minimumValue={0}
+                maximumValue={Math.max(totalPages - 1, 0)}
+                step={1}
+                onValueChange={onGoToPage}
+                tintColor="#FFFFFF"
+                trackColor="rgba(255,255,255,0.3)"
+                style={{ flex: 1 }}
+                disabled={totalPages <= 1}
+              />
+              <Text className="text-white text-[13px] font-medium min-w-[28px] text-center">
+                {totalPages}
+              </Text>
+            </View>
+          )}
           <Text className="text-white/60 text-[11px] text-center mt-xs mb-xs">
             Chapter {chapterIndex + 1} of {book.spine.length}
           </Text>

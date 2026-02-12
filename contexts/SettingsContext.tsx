@@ -14,6 +14,7 @@ const DEFAULT_READING_SETTINGS: ReadingSettings = {
   readingThemeId: DEFAULT_READING_THEME_ID,
   viewMode: 'paginated',
   pageMargin: DEFAULT_PAGE_MARGIN,
+  showFurigana: true,
 };
 
 const DEFAULT_SETTINGS: AppSettings = {

@@ -62,6 +62,9 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
 
   // Track whether continuous mode content is already loaded (all chapters at once)
   const continuousLoadedBookId = useRef<string | null>(null);
+  // Fingerprint of settings+theme used for the current continuous build.
+  // When this changes we must rebuild even if the book ID hasn't changed.
+  const continuousSettingsFingerprint = useRef<string | null>(null);
   // Track the last chapter index we know about to avoid unnecessary scrollToChapter calls
   // when the bridge reports chapterIndexUpdate (which already reflects the current scroll).
   const lastKnownChapterRef = useRef(chapterIndex);
@@ -111,17 +114,24 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
       lineHeight: settings.lineHeight,
       fontFamily: settings.fontFamily,
       pageMargin: settings.pageMargin,
+      showFurigana: settings.showFurigana,
     };
+
+    // Build a fingerprint from all values that affect the rendered HTML so we
+    // can detect when continuous mode needs a full rebuild (not just a scroll).
+    const fingerprint = JSON.stringify(commonOpts);
 
     async function loadContent() {
       const spine = book.spine;
 
       if (isContinuous) {
         // ── Continuous mode: load ALL chapters at once ──
-        // If already loaded for this book, only scroll if the chapter actually
-        // changed from a user action (e.g. chapter list selection).
-        // Skip if the change came from the bridge's own chapterIndexUpdate.
-        if (continuousLoadedBookId.current === book.id) {
+        // If already loaded for this book AND settings haven't changed,
+        // only scroll if the chapter changed from a user action.
+        if (
+          continuousLoadedBookId.current === book.id &&
+          continuousSettingsFingerprint.current === fingerprint
+        ) {
           if (chapterIndex !== lastKnownChapterRef.current) {
             console.log(`[EpubReader] Continuous already loaded, scrolling to ch ${chapterIndex}`);
             lastKnownChapterRef.current = chapterIndex;
@@ -157,6 +167,7 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
           setHtmlContent(html);
           setBaseUrl(`${book.filePath}/`);
           continuousLoadedBookId.current = book.id;
+          continuousSettingsFingerprint.current = fingerprint;
         } catch (error) {
           console.error('[EpubReader] Failed to load chapters:', error);
           onMessageRef.current({
@@ -167,6 +178,7 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
       } else {
         // ── Paginated mode: load single chapter ──
         continuousLoadedBookId.current = null;
+        continuousSettingsFingerprint.current = null;
 
         console.log(`[EpubReader] loadChapter called: chapterIndex=${chapterIndex}, spineLength=${spine.length}`);
         if (chapterIndex < 0 || chapterIndex >= spine.length) {

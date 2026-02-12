@@ -27,6 +27,7 @@ export type WebViewToRNMessage =
   | { type: 'chapterEnd' }
   | { type: 'chapterStart' }
   | { type: 'chapterIndexUpdate'; chapterIndex: number }
+  | { type: 'scrollProgress'; currentPage: number; totalPages: number }
   | { type: 'linkTap'; href: string }
   | { type: 'selectionChange'; text: string }
   | { type: 'contentHeight'; height: number }

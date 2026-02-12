@@ -26,6 +26,8 @@ export interface ReadingSettings {
   viewMode: ViewMode;
   /** Page margin in px */
   pageMargin: number;
+  /** Whether to display furigana (ruby text) */
+  showFurigana: boolean;
 }
 
 export interface AppSettings {

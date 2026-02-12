@@ -63,6 +63,11 @@ export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
   } catch (_) {
     // Column already exists
   }
+  try {
+    await db.execAsync(`ALTER TABLE books ADD COLUMN original_file_name TEXT`);
+  } catch (_) {
+    // Column already exists
+  }
 
   return db;
 }
@@ -85,8 +90,8 @@ export function getDatabase(): SQLite.SQLiteDatabase {
 export async function insertBook(book: Book): Promise<void> {
   const database = getDatabase();
   await database.runAsync(
-    `INSERT INTO books (id, title, author, cover_path, file_path, epub_path, language, spine, page_progression_direction, added_at, last_read_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO books (id, title, author, cover_path, file_path, epub_path, original_file_name, language, spine, page_progression_direction, added_at, last_read_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       book.id,
       book.title,
@@ -94,6 +99,7 @@ export async function insertBook(book: Book): Promise<void> {
       book.coverPath,
       book.filePath,
       book.epubPath,
+      book.originalFileName,
       book.language,
       JSON.stringify(book.spine),
       book.pageProgressionDirection,
@@ -234,6 +240,7 @@ function rowToBook(row: BookRow): Book {
     coverPath: row.cover_path,
     filePath: row.file_path,
     epubPath: row.epub_path,
+    originalFileName: row.original_file_name ?? '',
     language: row.language,
     spine: JSON.parse(row.spine),
     pageProgressionDirection: row.page_progression_direction as 'ltr' | 'rtl' | 'default',
