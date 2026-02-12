@@ -45,9 +45,27 @@ export async function initDictionaryDatabase(): Promise<SQLite.SQLiteDatabase> {
     await FileSystem.makeDirectoryAsync(dbDir, { intermediates: true });
   }
 
-  // Copy the bundled asset if not already present
+  // Bump this version whenever the bundled dictionary_yomu.db changes.
+  // When the local copy is older, it gets replaced with the new bundle.
+  const DB_VERSION = 2; // v2: added kanji_core table
+  const versionFile = `${dbDir}/${dbName}.version`;
+
+  let needsCopy = false;
   const fileInfo = await FileSystem.getInfoAsync(dbPath);
   if (!fileInfo.exists) {
+    needsCopy = true;
+  } else {
+    // Check stored version
+    const vInfo = await FileSystem.getInfoAsync(versionFile);
+    if (!vInfo.exists) {
+      needsCopy = true; // no version file → legacy copy
+    } else {
+      const stored = await FileSystem.readAsStringAsync(versionFile);
+      if (parseInt(stored, 10) < DB_VERSION) needsCopy = true;
+    }
+  }
+
+  if (needsCopy) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const asset = Asset.fromModule(require('../assets/dictionary_yomu.db'));
     await asset.downloadAsync();
@@ -56,12 +74,17 @@ export async function initDictionaryDatabase(): Promise<SQLite.SQLiteDatabase> {
       throw new Error('Failed to download dictionary database asset');
     }
 
+    // Remove old copy (and WAL/SHM) so expo-sqlite doesn't see stale data
+    await FileSystem.deleteAsync(dbPath, { idempotent: true });
+    await FileSystem.deleteAsync(`${dbPath}-wal`, { idempotent: true });
+    await FileSystem.deleteAsync(`${dbPath}-shm`, { idempotent: true });
+
     await FileSystem.copyAsync({
       from: asset.localUri,
       to: dbPath,
     });
 
-    console.log('[Dictionary] Copied bundled database to', dbPath);
+    await FileSystem.writeAsStringAsync(versionFile, String(DB_VERSION));
   }
 
   dictDb = await SQLite.openDatabaseAsync(dbName);
@@ -69,7 +92,6 @@ export async function initDictionaryDatabase(): Promise<SQLite.SQLiteDatabase> {
   // Enable WAL mode for better read performance
   await dictDb.execAsync('PRAGMA journal_mode = WAL;');
 
-  console.log('[Dictionary] Database initialized');
   return dictDb;
 }
 
@@ -367,6 +389,31 @@ export async function lookupWordById(id: number): Promise<DictionaryEntry | null
   return entry;
 }
 
+// ---------------------------------------------------------------------------
+// Kanji lookup
+// ---------------------------------------------------------------------------
+
+/**
+ * Look up meanings for a batch of individual kanji characters.
+ * Returns a Map from kanji character to its primary English meaning.
+ */
+export async function lookupKanjiBatch(kanjiChars: string[]): Promise<Map<string, string>> {
+  if (kanjiChars.length === 0) return new Map();
+  const db = getDictionaryDatabase();
+  const placeholders = kanjiChars.map(() => '?').join(',');
+  const rows = await db.getAllAsync<{ character: string; meaning: string }>(
+    `SELECT character, meaning FROM kanji_core WHERE character IN (${placeholders})`,
+    kanjiChars
+  );
+  console.log(`[Kanji] Looked up [${kanjiChars.join(', ')}] → found ${rows.length}: ${rows.map((r) => `${r.character}="${r.meaning}"`).join(', ')}`);
+  const result = new Map<string, string>();
+  for (const row of rows) {
+    result.set(row.character, row.meaning);
+  }
+  console.log(`[Kanji] Looked up [${kanjiChars.join(', ')}] → found ${result.size}: ${[...result.entries()].map(([k, m]) => `${k}="${m}"`).join(', ')}`);
+  return result;
+}
+
 /**
  * Parse a frequency rank from an entry's tags (e.g. "Top 100" → 100).
  * Returns Infinity if no frequency tag is found.
@@ -548,11 +595,6 @@ export async function findAllMatches(
     // Then by frequency rank (lower = more common = better)
     return parseFrequencyRank(a.entry) - parseFrequencyRank(b.entry);
   });
-
-  console.log(
-    `[Dictionary] Found ${sorted.length} match(es): ` +
-      sorted.map(r => `${r.matchedTerm}(${r.matchLength})`).join(', ')
-  );
 
   return sorted;
 }

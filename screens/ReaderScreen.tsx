@@ -13,7 +13,11 @@ import { setChapterSelectionHandler, clearChapterSelectionHandler } from '@/util
 import { setDictionaryDismissHandler, clearDictionaryDismissHandler } from '@/utils/dictionarySelection';
 import { findAllMatches } from '@/utils/dictionary';
 import { mediumTap } from '@/utils/haptics';
+import { mmkv } from '@/utils/storage';
 import type { ReaderLocation, WebViewToRNMessage } from '@/types/reader';
+
+/** MMKV key for the book currently open in the reader. */
+export const ACTIVE_BOOK_KEY = 'active_reader_book_id';
 
 /**
  * Returns true if a hex color is "dark" (luminance < 0.5).
@@ -53,9 +57,6 @@ export default function ReaderScreen() {
   // Maps chapterIndex -> totalPages for that chapter.
   const chapterPageCountsRef = useRef<Map<number, number>>(new Map());
 
-  // Track whether this is the first load (to restore saved page)
-  const isInitialLoad = useRef(true);
-
   // Prevent duplicate "book missing" alerts
   const hasShownMissingAlert = useRef(false);
 
@@ -66,9 +67,11 @@ export default function ReaderScreen() {
   const readingTheme = useMemo(() => getReadingTheme(), [getReadingTheme]);
   const statusBarStyle = isDarkColor(readingTheme.backgroundColor) ? 'light' : 'dark';
 
-  // Update last read timestamp
+  // Persist this book as the active reader session so the app
+  // can reopen it on next launch if the user didn't leave explicitly.
   useEffect(() => {
     if (id) {
+      mmkv.setString(ACTIVE_BOOK_KEY, id);
       updateLastRead(id);
     }
   }, [id, updateLastRead]);
@@ -90,9 +93,6 @@ export default function ReaderScreen() {
       switch (message.type) {
         case 'ready':
           setIsReady(true);
-          if (isInitialLoad.current) {
-            isInitialLoad.current = false;
-          }
           break;
         case 'pageInfo':
         case 'pageChange':
@@ -169,7 +169,6 @@ export default function ReaderScreen() {
           handleDictionaryLookup(message.text, message.offset);
           break;
         case 'error':
-          console.error('[ReaderScreen] WebView error:', message.message);
           if (
             (message.message?.includes('is not readable') ||
               message.message?.includes('could not be read') ||
@@ -189,6 +188,7 @@ export default function ReaderScreen() {
    * Handle a missing/corrupt book file: alert the user, remove the book, and go back.
    */
   const handleBookFileMissing = useCallback(() => {
+    mmkv.delete(ACTIVE_BOOK_KEY);
     Alert.alert(
       'Book Unavailable',
       'This book\u2019s files could not be found. It may have been deleted or corrupted. The book will be removed from your library.',
@@ -199,8 +199,8 @@ export default function ReaderScreen() {
             if (id) {
               try {
                 await removeBook(id);
-              } catch (err) {
-                console.error('[ReaderScreen] Failed to remove missing book:', err);
+              } catch {
+                // removal failed silently
               }
             }
             router.back();
@@ -223,16 +223,9 @@ export default function ReaderScreen() {
         mediumTap();
 
         const results = await findAllMatches(text, offset);
-        if (results.length === 0) {
-          console.log('[ReaderScreen] No dictionary match found');
-          return;
-        }
+        if (results.length === 0) return;
 
         const primary = results[0];
-        console.log(
-          `[ReaderScreen] ${results.length} match(es), primary: "${primary.matchedTerm}" (id=${primary.entry.id})` +
-            (primary.originalForm ? ` [from "${primary.originalForm}"]` : '')
-        );
 
         // Highlight the primary (longest) match in the WebView
         readerRef.current?.highlightDictionary(primary.matchStartOffset, primary.matchLength);
@@ -250,8 +243,8 @@ export default function ReaderScreen() {
           `?matches=${encodeURIComponent(JSON.stringify(matchInfo))}`;
 
         router.push(route);
-      } catch (err) {
-        console.error('[ReaderScreen] Dictionary lookup error:', err);
+      } catch {
+        // lookup failed silently
       }
     },
     [router]
@@ -276,6 +269,7 @@ export default function ReaderScreen() {
   }, []);
 
   const handleBack = useCallback(() => {
+    mmkv.delete(ACTIVE_BOOK_KEY);
     router.back();
   }, [router]);
 
@@ -348,14 +342,14 @@ export default function ReaderScreen() {
           settings={settings.reading}
           readingTheme={readingTheme}
           startAtEnd={startAtEnd}
-          initialPage={isInitialLoad.current ? book.lastPageNumber : undefined}
+          initialPage={book.lastPageNumber}
           onMessage={handleMessage}
           onCenterTap={handleCenterTap}
         />
       </View>
 
-      {/* Progress indicator - always visible at bottom-right */}
-      {isReady && !controlsVisible && (() => {
+      {/* Progress indicator - visible at bottom-right when enabled */}
+      {isReady && !controlsVisible && settings.reading.showProgressIndicator && (() => {
         let globalPage: number;
         let globalTotal: number;
 
