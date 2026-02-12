@@ -54,8 +54,7 @@
           "iCloudContainerEnvironment": "Production"
         }
       ],
-      "expo-sqlite",
-      "./plugins/withAndroidAdaptiveIconDark"
+      "expo-sqlite"
     ],
     "extra": {
       "router": {},
