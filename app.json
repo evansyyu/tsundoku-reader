@@ -1,13 +1,13 @@
 {
   "expo": {
-    "name": "Yomu Reader",
-    "slug": "yomu-reader",
+    "name": "Tsundoku Reader",
+    "slug": "tsundoku-reader",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "scheme": "yomureader",
+    "scheme": "tsundokureader",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -15,9 +15,9 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.yomu.reader",
+      "bundleIdentifier": "com.tsundoku.reader",
       "usesIcloudStorage": true,
-      "icon": "./assets/tsundoku.icon",
+      "icon": "./assets/icon.png",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -28,7 +28,7 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.yomu.reader"
+      "package": "com.tsundoku.reader"
     },
     "web": {
       "favicon": "./assets/favicon.png",
