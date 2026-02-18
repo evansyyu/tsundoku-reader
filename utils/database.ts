@@ -16,7 +16,7 @@ let db: SQLite.SQLiteDatabase | null = null;
 export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
   if (db) return db;
 
-  db = await SQLite.openDatabaseAsync('yomu-reader.db');
+  db = await SQLite.openDatabaseAsync('tsundoku-reader.db');
 
   // Run migrations
   await db.execAsync(`
@@ -65,6 +65,11 @@ export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
   }
   try {
     await db.execAsync(`ALTER TABLE books ADD COLUMN original_file_name TEXT`);
+  } catch (_) {
+    // Column already exists
+  }
+  try {
+    await db.execAsync(`ALTER TABLE books ADD COLUMN last_chapter_progress REAL NOT NULL DEFAULT 0`);
   } catch (_) {
     // Column already exists
   }
@@ -200,12 +205,13 @@ export async function deleteBookmark(id: string): Promise<void> {
 export async function updateReadingProgress(
   bookId: string,
   chapterIndex: number,
-  pageNumber: number
+  pageNumber: number,
+  chapterProgress: number = 0
 ): Promise<void> {
   const database = getDatabase();
   await database.runAsync(
-    `UPDATE books SET last_chapter_index = ?, last_page_number = ?, last_read_at = ? WHERE id = ?`,
-    [chapterIndex, pageNumber, Date.now(), bookId]
+    `UPDATE books SET last_chapter_index = ?, last_page_number = ?, last_chapter_progress = ?, last_read_at = ? WHERE id = ?`,
+    [chapterIndex, pageNumber, chapterProgress, Date.now(), bookId]
   );
 }
 
@@ -214,17 +220,22 @@ export async function updateReadingProgress(
  */
 export async function getReadingProgress(
   bookId: string
-): Promise<{ chapterIndex: number; pageNumber: number } | null> {
+): Promise<{ chapterIndex: number; pageNumber: number; chapterProgress: number } | null> {
   const database = getDatabase();
   const row = await database.getFirstAsync<{
     last_chapter_index: number;
     last_page_number: number;
+    last_chapter_progress: number;
   }>(
-    `SELECT last_chapter_index, last_page_number FROM books WHERE id = ?`,
+    `SELECT last_chapter_index, last_page_number, last_chapter_progress FROM books WHERE id = ?`,
     [bookId]
   );
   if (!row) return null;
-  return { chapterIndex: row.last_chapter_index, pageNumber: row.last_page_number };
+  return {
+    chapterIndex: row.last_chapter_index,
+    pageNumber: row.last_page_number,
+    chapterProgress: row.last_chapter_progress ?? 0,
+  };
 }
 
 // ──── Helpers ────────────────────────────────────────────────
@@ -248,5 +259,6 @@ function rowToBook(row: BookRow): Book {
     lastReadAt: row.last_read_at,
     lastChapterIndex: row.last_chapter_index ?? 0,
     lastPageNumber: row.last_page_number ?? 0,
+    lastChapterProgress: row.last_chapter_progress ?? 0,
   };
 }

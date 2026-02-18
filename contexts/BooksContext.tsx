@@ -19,7 +19,7 @@ interface BooksContextValue {
   /** Update a book's last read timestamp */
   updateLastRead: (id: string) => void;
   /** Save reading progress for a book */
-  saveReadingProgress: (id: string, chapterIndex: number, pageNumber: number) => void;
+  saveReadingProgress: (id: string, chapterIndex: number, pageNumber: number, chapterProgress: number) => void;
   /** Find a book by ID */
   getBook: (id: string) => Book | undefined;
   /** Refresh books from storage */
@@ -79,18 +79,18 @@ export function BooksProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const saveReadingProgress = useCallback(
-    (id: string, chapterIndex: number, pageNumber: number) => {
+    (id: string, chapterIndex: number, pageNumber: number, chapterProgress: number) => {
       const now = Date.now();
       setBooks((prev) =>
         prev.map((b) =>
           b.id === id
-            ? { ...b, lastChapterIndex: chapterIndex, lastPageNumber: pageNumber, lastReadAt: now }
+            ? { ...b, lastChapterIndex: chapterIndex, lastPageNumber: pageNumber, lastChapterProgress: chapterProgress, lastReadAt: now }
             : b
         )
       );
 
       // Fire-and-forget DB update
-      dbUpdateProgress(id, chapterIndex, pageNumber).catch(() => {});
+      dbUpdateProgress(id, chapterIndex, pageNumber, chapterProgress).catch(() => {});
     },
     []
   );

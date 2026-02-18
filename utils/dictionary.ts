@@ -1,7 +1,7 @@
 /**
  * Dictionary database layer and lookup service.
  *
- * Opens the bundled dictionary_yomu.db (read-only) alongside the
+ * Opens the bundled dictionary_tsundoku.db (read-only) alongside the
  * existing user-data database.  Uses expo-sqlite's async API.
  */
 
@@ -35,7 +35,7 @@ let dictDb: SQLite.SQLiteDatabase | null = null;
 export async function initDictionaryDatabase(): Promise<SQLite.SQLiteDatabase> {
   if (dictDb) return dictDb;
 
-  const dbName = 'dictionary_yomu.db';
+  const dbName = 'dictionary_tsundoku.db';
   const dbDir = `${FileSystem.documentDirectory}SQLite`;
   const dbPath = `${dbDir}/${dbName}`;
 
@@ -45,7 +45,7 @@ export async function initDictionaryDatabase(): Promise<SQLite.SQLiteDatabase> {
     await FileSystem.makeDirectoryAsync(dbDir, { intermediates: true });
   }
 
-  // Bump this version whenever the bundled dictionary_yomu.db changes.
+  // Bump this version whenever the bundled dictionary_tsundoku.db changes.
   // When the local copy is older, it gets replaced with the new bundle.
   const DB_VERSION = 2; // v2: added kanji_core table
   const versionFile = `${dbDir}/${dbName}.version`;
@@ -67,7 +67,7 @@ export async function initDictionaryDatabase(): Promise<SQLite.SQLiteDatabase> {
 
   if (needsCopy) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const asset = Asset.fromModule(require('../assets/dictionary_yomu.db'));
+    const asset = Asset.fromModule(require('../assets/dictionary_tsundoku.db'));
     await asset.downloadAsync();
 
     if (!asset.localUri) {
@@ -405,12 +405,10 @@ export async function lookupKanjiBatch(kanjiChars: string[]): Promise<Map<string
     `SELECT character, meaning FROM kanji_core WHERE character IN (${placeholders})`,
     kanjiChars
   );
-  console.log(`[Kanji] Looked up [${kanjiChars.join(', ')}] → found ${rows.length}: ${rows.map((r) => `${r.character}="${r.meaning}"`).join(', ')}`);
   const result = new Map<string, string>();
   for (const row of rows) {
     result.set(row.character, row.meaning);
   }
-  console.log(`[Kanji] Looked up [${kanjiChars.join(', ')}] → found ${result.size}: ${[...result.entries()].map(([k, m]) => `${k}="${m}"`).join(', ')}`);
   return result;
 }
 

@@ -12,7 +12,7 @@ import type { MMKV } from 'react-native-mmkv';
  * Global MMKV instance for the app.
  */
 export const storage: MMKV = createMMKV({
-  id: 'yomu-reader-storage',
+  id: 'tsundoku-reader-storage',
 });
 
 /**

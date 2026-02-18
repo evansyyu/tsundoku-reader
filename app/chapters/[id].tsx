@@ -110,26 +110,31 @@ export default function ChaptersScreen() {
             ) : undefined,
         }}
       />
-      <FlatList
+      <View
+        collapsable={false}
         style={{
           flex: 1,
           backgroundColor: glassAvailable ? 'transparent' : colors.background,
         }}
-        contentInsetAdjustmentBehavior="automatic"
-        data={book.spine}
-        renderItem={renderItem}
-        keyExtractor={keyExtractor}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        initialScrollIndex={
-          currentChapterIndex > 4 ? currentChapterIndex - 2 : 0
-        }
-        getItemLayout={(_, index) => ({
-          length: ITEM_HEIGHT,
-          offset: ITEM_HEIGHT * index,
-          index,
-        })}
-      />
+      >
+        <FlatList
+          style={{ flex: 1 }}
+          contentInsetAdjustmentBehavior="automatic"
+          data={book.spine}
+          renderItem={renderItem}
+          keyExtractor={keyExtractor}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          initialScrollIndex={
+            currentChapterIndex > 4 ? currentChapterIndex - 2 : 0
+          }
+          getItemLayout={(_, index) => ({
+            length: ITEM_HEIGHT,
+            offset: ITEM_HEIGHT * index,
+            index,
+          })}
+        />
+      </View>
     </>
   );
 }

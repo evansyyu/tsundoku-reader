@@ -30,6 +30,8 @@ interface EpubReaderProps {
   startAtEnd?: boolean;
   /** Navigate to a specific page once the chapter loads (for restoring progress) */
   initialPage?: number;
+  /** Fraction (0.0-1.0) through the chapter for cross-mode position restoration */
+  initialChapterProgress?: number;
   onMessage: (message: WebViewToRNMessage) => void;
   onCenterTap: () => void;
 }
@@ -49,6 +51,7 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
     readingTheme,
     startAtEnd = false,
     initialPage,
+    initialChapterProgress,
     onMessage,
     onCenterTap,
   },
@@ -59,6 +62,7 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
   const [baseUrl, setBaseUrl] = useState<string>('');
   const startAtEndRef = useRef(startAtEnd);
   const initialPageRef = useRef(initialPage);
+  const initialChapterProgressRef = useRef(initialChapterProgress);
 
   // Track whether continuous mode content is already loaded (all chapters at once)
   const continuousLoadedBookId = useRef<string | null>(null);
@@ -128,6 +132,10 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
     async function loadContent() {
       const spine = book.spine;
 
+      // Refresh the chapter progress ref from the prop so mode switches
+      // and settings changes pick up the latest saved position.
+      initialChapterProgressRef.current = initialChapterProgress;
+
       if (isContinuous) {
         // ── Continuous mode: load ALL chapters at once ──
         // If already loaded for this book AND settings haven't changed,
@@ -162,9 +170,11 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
 
           const chapterHrefs = spine.map((item) => item.href);
           const html = buildContinuousHtml(allContents, chapterHrefs, commonOpts);
-          // Queue scroll to the initial chapter after the WebView loads
-          if (chapterIndex > 0) {
+          // Queue scroll to the initial chapter + progress after the WebView loads
+          const progress = initialChapterProgressRef.current ?? 0;
+          if (chapterIndex > 0 || progress > 0) {
             pendingScrollChapterRef.current = chapterIndex;
+            pendingScrollProgressRef.current = progress;
           }
           setHtmlContent(html);
           setBaseUrl(`${book.filePath}/`);
@@ -254,6 +264,16 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
                 `window.__readerBridge && window.__readerBridge.goToPage(${data.totalPages - 1}, false); true;`
               );
             }
+          } else if (initialChapterProgressRef.current != null && initialChapterProgressRef.current > 0) {
+            // Restore from chapterProgress (works across mode switches)
+            const page = Math.round(initialChapterProgressRef.current * (data.totalPages - 1));
+            initialChapterProgressRef.current = undefined;
+            initialPageRef.current = undefined;
+            if (page > 0) {
+              webViewRef.current?.injectJavaScript(
+                `window.__readerBridge && window.__readerBridge.goToPage(${page}, false); true;`
+              );
+            }
           } else if (initialPageRef.current != null && initialPageRef.current > 0) {
             const page = initialPageRef.current;
             initialPageRef.current = undefined;
@@ -280,8 +300,9 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
   // Track whether dictionary should be enabled for this book
   const isJapanese = book.language === 'ja' || book.language.startsWith('ja-');
 
-  // Track the initial chapter to scroll to when continuous mode first loads
+  // Track the initial chapter + progress to scroll to when continuous mode first loads
   const pendingScrollChapterRef = useRef<number | null>(null);
+  const pendingScrollProgressRef = useRef<number>(0);
 
   const handleLoadEnd = useCallback(() => {
     webViewRef.current?.injectJavaScript(bridgeScriptRef.current);
@@ -294,13 +315,15 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
       }, 100);
     }
 
-    // In continuous mode, scroll to the requested chapter after the bridge initializes
-    if (pendingScrollChapterRef.current != null && pendingScrollChapterRef.current > 0) {
+    // In continuous mode, scroll to the requested chapter + progress after the bridge initializes
+    if (pendingScrollChapterRef.current != null) {
       const ch = pendingScrollChapterRef.current;
+      const pr = pendingScrollProgressRef.current || 0;
       pendingScrollChapterRef.current = null;
+      pendingScrollProgressRef.current = 0;
       setTimeout(() => {
         webViewRef.current?.injectJavaScript(
-          `window.__readerBridge && window.__readerBridge.scrollToChapter(${ch}, false); true;`
+          `window.__readerBridge && window.__readerBridge.scrollToChapterWithProgress(${ch}, ${pr}); true;`
         );
       }, 150);
     }

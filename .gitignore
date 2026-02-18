@@ -41,4 +41,4 @@ yarn-error.*
 /android
 
 # dictionaries (tracked via Git LFS)
-# assets/dictionary_yomu.db
+# assets/dictionary_tsundoku.db

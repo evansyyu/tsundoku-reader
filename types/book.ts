@@ -52,6 +52,8 @@ export interface Book {
   lastChapterIndex: number;
   /** Last page number within that chapter */
   lastPageNumber: number;
+  /** Progress through the last chapter (0.0 to 1.0) */
+  lastChapterProgress: number;
 }
 
 export interface BookRow {
@@ -69,4 +71,5 @@ export interface BookRow {
   last_read_at: number | null;
   last_chapter_index: number;
   last_page_number: number;
+  last_chapter_progress: number;
 }

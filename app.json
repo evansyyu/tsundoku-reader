@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "tsundoku",
-    "slug": "yomu-reader",
+    "slug": "tsundoku-reader",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -59,7 +59,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "135a15bf-cd5f-41f4-9704-522441fd0e00"
+        "projectId": "a28a0016-4deb-42c7-8703-608d6be337a1"
       }
     },
     "owner": "glitchedgadget"
