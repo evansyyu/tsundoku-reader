@@ -1,7 +1,7 @@
 /**
  * Dictionary lookup type definitions.
  *
- * Mirrors the structure of the dictionary_yomu.db SQLite database.
+ * Mirrors the structure of the dictionary_tsundoku.db SQLite database.
  */
 
 /** A single furigana reading for an entry */

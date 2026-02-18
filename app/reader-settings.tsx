@@ -45,6 +45,7 @@ export default function ReaderSettingsModal() {
   );
 
   return (
+    <View collapsable={false} style={{ flex: 1 }}>
     <ScrollView
       contentInsetAdjustmentBehavior="automatic"
       scrollToOverflowEnabled
@@ -159,6 +160,7 @@ export default function ReaderSettingsModal() {
             color={colors.tint}
           />
         </View>
+
       </View>
 
       <SectionHeader title="View Mode" />
@@ -218,6 +220,7 @@ export default function ReaderSettingsModal() {
 
       <View className="h-xxl" />
     </ScrollView>
+    </View>
   );
 }
 

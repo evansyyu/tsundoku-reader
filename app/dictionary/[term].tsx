@@ -452,16 +452,10 @@ function EntryPage({
   const headwordKanji = useMemo(() => extractKanji(entry.term), [entry.term]);
   const [kanjiMeanings, setKanjiMeanings] = useState<Map<string, string>>(new Map());
   useEffect(() => {
-    console.log(`[Kanji] term="${entry.term}" extracted=[${headwordKanji.join(',')}] count=${headwordKanji.length}`);
     if (headwordKanji.length > 0) {
       lookupKanjiBatch(headwordKanji)
-        .then((m) => {
-          console.log(`[Kanji] batch resolved, size=${m.size}`);
-          setKanjiMeanings(m);
-        })
-        .catch((err) => {
-          console.log(`[Kanji] batch ERROR: ${err}`);
-        });
+        .then(setKanjiMeanings)
+        .catch(() => {});
     }
   }, [headwordKanji]);
 
@@ -786,6 +780,7 @@ export default function DictionaryScreen() {
         }}
       />
       <View
+        collapsable={false}
         style={{
           flex: 1,
           backgroundColor: glassAvailable ? 'transparent' : colors.background,

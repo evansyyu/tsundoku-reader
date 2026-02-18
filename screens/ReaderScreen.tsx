@@ -47,7 +47,7 @@ export default function ReaderScreen() {
     chapterIndex: book?.lastChapterIndex ?? 0,
     pageNumber: book?.lastPageNumber ?? 0,
     progress: 0,
-    chapterProgress: 0,
+    chapterProgress: book?.lastChapterProgress ?? 0,
   }));
   const [totalPages, setTotalPages] = useState(1);
   const [isReady, setIsReady] = useState(false);
@@ -76,13 +76,13 @@ export default function ReaderScreen() {
     }
   }, [id, updateLastRead]);
 
-  // Save progress whenever page or chapter changes
+  // Save progress whenever page, chapter, or chapter progress changes
   const saveProgressRef = useRef(saveReadingProgress);
   saveProgressRef.current = saveReadingProgress;
   useEffect(() => {
     if (!id || !isReady) return;
-    saveProgressRef.current(id, currentLocation.chapterIndex, currentLocation.pageNumber);
-  }, [id, isReady, currentLocation.chapterIndex, currentLocation.pageNumber]);
+    saveProgressRef.current(id, currentLocation.chapterIndex, currentLocation.pageNumber, currentLocation.chapterProgress);
+  }, [id, isReady, currentLocation.chapterIndex, currentLocation.pageNumber, currentLocation.chapterProgress]);
 
   // Keep a ref to settings so handleMessage can check viewMode without depending on it
   const settingsRef = useRef(settings);
@@ -103,8 +103,8 @@ export default function ReaderScreen() {
               ...prev,
               pageNumber: message.currentPage,
               chapterProgress:
-                message.totalPages > 0
-                  ? message.currentPage / message.totalPages
+                message.totalPages > 1
+                  ? message.currentPage / (message.totalPages - 1)
                   : 0,
             };
           });
@@ -147,13 +147,14 @@ export default function ReaderScreen() {
           break;
         }
         case 'chapterIndexUpdate':
-          // Continuous mode: bridge reports which chapter section is visible.
-          // Update location without triggering a content reload.
+          // Continuous mode: bridge reports which chapter section is visible
+          // along with intra-chapter progress (0.0-1.0).
           setCurrentLocation((prev) => {
-            if (prev.chapterIndex === message.chapterIndex) return prev;
+            if (prev.chapterIndex === message.chapterIndex && prev.chapterProgress === message.chapterProgress) return prev;
             return {
               ...prev,
               chapterIndex: message.chapterIndex,
+              chapterProgress: message.chapterProgress,
             };
           });
           break;
@@ -211,6 +212,9 @@ export default function ReaderScreen() {
     );
   }, [id, removeBook, router]);
 
+  // Guard against overlapping dictionary lookups / rapid modal opens
+  const dictLookupInProgress = useRef(false);
+
   /**
    * Handle a dictionary lookup request from the WebView.
    * Finds all matches, highlights the longest, and opens the dictionary
@@ -218,6 +222,9 @@ export default function ReaderScreen() {
    */
   const handleDictionaryLookup = useCallback(
     async (text: string, offset: number) => {
+      if (dictLookupInProgress.current) return;
+      dictLookupInProgress.current = true;
+
       try {
         // Haptic feedback immediately
         mediumTap();
@@ -245,6 +252,9 @@ export default function ReaderScreen() {
         router.push(route);
       } catch {
         // lookup failed silently
+      } finally {
+        // Release guard after a short delay to prevent rapid re-triggers
+        setTimeout(() => { dictLookupInProgress.current = false; }, 600);
       }
     },
     [router]
@@ -257,7 +267,7 @@ export default function ReaderScreen() {
    * or when a new dictionary lookup replaces it.
    */
   const handleDictionaryDismiss = useCallback(() => {
-    // Intentionally no-op: preserve native selection after modal dismiss.
+    readerRef.current?.clearDictionaryHighlight();
   }, []);
 
   const handleCenterTap = useCallback(() => {
@@ -343,6 +353,7 @@ export default function ReaderScreen() {
           readingTheme={readingTheme}
           startAtEnd={startAtEnd}
           initialPage={book.lastPageNumber}
+          initialChapterProgress={book.lastChapterProgress}
           onMessage={handleMessage}
           onCenterTap={handleCenterTap}
         />

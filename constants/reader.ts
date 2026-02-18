@@ -91,6 +91,10 @@ export const HORIZONTAL_PAGINATED_CSS = `
     widows: 2;
   }
   body::-webkit-scrollbar { display: none; }
+
+  p, li, dd, dt, td, th, figcaption, blockquote {
+    text-align: left !important;
+  }
 `;
 
 /**
@@ -166,6 +170,10 @@ export const HORIZONTAL_SCROLL_CSS = `
     height: auto !important;
     min-height: auto !important;
     overflow-x: hidden !important;
+    text-align: left !important;
+  }
+
+  p, li, dd, dt, td, th, figcaption, blockquote {
     text-align: left !important;
   }
 `;
@@ -294,8 +302,6 @@ export const READER_BRIDGE_JS = `
 
   // ── Dictionary lookup state ────────────────────────────────────
   let dictEnabled = false;
-  let longPressTimer = null;
-  let longPressTriggered = false;
   let touchStartX = 0;
   let touchStartY = 0;
   // The text node and offset from the last long-press (for highlighting)
@@ -502,6 +508,37 @@ export const READER_BRIDGE_JS = `
     if (isRubyAnnotation(range.startContainer)) {
       return null;
     }
+
+    // Verify the touch actually hit text, not empty space.
+    // caretRangeFromPoint snaps to the nearest caret even from margins/gaps,
+    // so we check the character bounding rect against the touch point.
+    try {
+      var textLen = (range.startContainer.textContent || '').length;
+      if (textLen === 0) return null;
+      var off = range.startOffset;
+      var charRange = document.createRange();
+      if (off < textLen) {
+        charRange.setStart(range.startContainer, off);
+        charRange.setEnd(range.startContainer, off + 1);
+      } else if (off > 0) {
+        charRange.setStart(range.startContainer, off - 1);
+        charRange.setEnd(range.startContainer, off);
+      } else {
+        return null;
+      }
+      var rects = charRange.getClientRects();
+      if (rects.length > 0) {
+        var cr = rects[0];
+        var tol = 10;
+        if (x < cr.left - tol || x > cr.right + tol ||
+            y < cr.top - tol || y > cr.bottom + tol) {
+          return null;
+        }
+      }
+    } catch(e) {
+      return null;
+    }
+
     return { node: range.startContainer, offset: range.startOffset };
   }
 
@@ -656,65 +693,22 @@ export const READER_BRIDGE_JS = `
   var swipeHandled = false;
   var SWIPE_THRESHOLD = 30; // px horizontal to commit a page turn
 
-  // Prevent native scrolling in paginated mode; cancel long-press on movement
+  // Prevent native scrolling in paginated mode
   document.addEventListener('touchmove', function(e) {
     if (isPaginated) e.preventDefault();
-
-    if (longPressTimer !== null) {
-      var touch = e.touches[0];
-      if (touch) {
-        var dx = touch.clientX - touchStartX;
-        var dy = touch.clientY - touchStartY;
-        if (dx * dx + dy * dy > 100) {
-          clearTimeout(longPressTimer);
-          longPressTimer = null;
-        }
-      }
-    }
   }, { passive: false });
 
-  // Touch start: record position, start long-press timer
+  // Touch start: record position for swipe detection and click movement check
   document.addEventListener('touchstart', function(e) {
-    longPressTriggered = false;
-
     var touch = e.touches[0];
     if (!touch) return;
 
     touchStartX = touch.clientX;
     touchStartY = touch.clientY;
-
-    if (!dictEnabled || e.touches.length !== 1) return;
-
-    longPressTimer = setTimeout(function() {
-      longPressTimer = null;
-      longPressTriggered = true;
-
-      var result = getTextAtPoint(touchStartX, touchStartY);
-      if (!result) return;
-
-      dictTextNode = result.node;
-      dictTextOffset = result.offset;
-
-      var extracted = extractSurroundingText(result.node, result.offset, 20);
-      dictSurroundingOffset = extracted.offset;
-
-      sendMessage({
-        type: 'dictionaryLookup',
-        text: extracted.text,
-        offset: extracted.offset,
-      });
-    }, 500);
   }, { passive: true });
 
   // Touch end: detect swipe for paginated navigation
   document.addEventListener('touchend', function(e) {
-    if (longPressTimer !== null) {
-      clearTimeout(longPressTimer);
-      longPressTimer = null;
-    }
-
-    if (longPressTriggered) return;
-
     if (isPaginated && e.changedTouches.length > 0) {
       var touch = e.changedTouches[0];
       var dx = touch.clientX - touchStartX;
@@ -753,19 +747,55 @@ export const READER_BRIDGE_JS = `
     lastTapTime = now;
   }, { passive: false });
 
+  // Cooldown to prevent rapid-fire dictionary lookups / multiple modals
+  var lastDictLookupTime = 0;
+  var DICT_COOLDOWN_MS = 800;
+
   /**
-   * Handle taps: center tap = toggle reader controls.
+   * Handle taps: tap on text = dictionary lookup (takes priority);
+   * tap on non-text in center = toggle reader controls
    */
   document.addEventListener('click', function(e) {
-    // Suppress click after long-press or swipe
-    if (longPressTriggered || swipeHandled) {
-      longPressTriggered = false;
+    // Suppress click after swipe
+    if (swipeHandled) {
       swipeHandled = false;
       e.preventDefault();
       e.stopPropagation();
       return;
     }
 
+    // Dictionary lookup on text takes priority over center-tap
+    if (dictEnabled) {
+      // Suppress if finger moved significantly (scroll/swipe gesture)
+      var dx = e.clientX - touchStartX;
+      var dy = e.clientY - touchStartY;
+      if (dx * dx + dy * dy > 100) {
+        // Finger moved — treat as scroll/swipe, fall through to center-tap
+      } else {
+        // Enforce cooldown to prevent multiple modals
+        var now = Date.now();
+        if (now - lastDictLookupTime < DICT_COOLDOWN_MS) return;
+
+        var result = getTextAtPoint(e.clientX, e.clientY);
+        if (result) {
+          lastDictLookupTime = now;
+          dictTextNode = result.node;
+          dictTextOffset = result.offset;
+
+          var extracted = extractSurroundingText(result.node, result.offset, 20);
+          dictSurroundingOffset = extracted.offset;
+
+          sendMessage({
+            type: 'dictionaryLookup',
+            text: extracted.text,
+            offset: extracted.offset,
+          });
+          return;
+        }
+      }
+    }
+
+    // Center-tap: toggle reader controls
     var x = e.clientX;
     var width = window.innerWidth;
     var third = width / 3;
@@ -782,9 +812,11 @@ export const READER_BRIDGE_JS = `
 
   var lastReportedChapter = -1;
   var lastReportedScrollPage = -1;
+  var lastReportedChapterProgress = -1;
 
   /**
-   * Detect which .chapter-section is most visible and report to RN.
+   * Detect which .chapter-section is most visible and report to RN,
+   * including intra-chapter progress (0.0-1.0).
    */
   function detectCurrentChapter() {
     if (isPaginated) return;
@@ -794,6 +826,7 @@ export const READER_BRIDGE_JS = `
 
     var bestIdx = 0;
     var bestVisibility = -1;
+    var bestSection = sections[0];
     var vpH = window.innerHeight;
     var vpW = window.innerWidth;
 
@@ -802,12 +835,10 @@ export const READER_BRIDGE_JS = `
       var visible;
 
       if (isVertical) {
-        // Vertical-rl: visibility is overlap in the X axis
         var left = Math.max(rect.left, 0);
         var right = Math.min(rect.right, vpW);
         visible = Math.max(0, right - left);
       } else {
-        // Horizontal: visibility is overlap in the Y axis
         var top = Math.max(rect.top, 0);
         var bottom = Math.min(rect.bottom, vpH);
         visible = Math.max(0, bottom - top);
@@ -816,12 +847,39 @@ export const READER_BRIDGE_JS = `
       if (visible > bestVisibility) {
         bestVisibility = visible;
         bestIdx = parseInt(sections[i].getAttribute('data-chapter')) || 0;
+        bestSection = sections[i];
       }
     }
 
-    if (bestIdx !== lastReportedChapter) {
+    // Compute progress within the visible chapter (0.0-1.0)
+    var chapterProgress = 0;
+    if (bestSection) {
+      var r = bestSection.getBoundingClientRect();
+      if (isVertical) {
+        // vertical-rl: reading progresses right-to-left.
+        // As the user scrolls left, the section moves right relative to the
+        // viewport, so rect.right exceeds vpW by the amount already read.
+        var sectionW = r.width;
+        if (sectionW > 0) {
+          chapterProgress = Math.max(0, Math.min(1, (r.right - vpW) / sectionW));
+        }
+      } else {
+        // horizontal-tb: reading progresses top-to-bottom.
+        // As the section scrolls above the viewport, rect.top becomes negative.
+        var sectionH = r.height;
+        if (sectionH > 0) {
+          chapterProgress = Math.max(0, Math.min(1, -r.top / sectionH));
+        }
+      }
+    }
+
+    // Round to 4 decimal places to reduce noise
+    var roundedProgress = Math.round(chapterProgress * 10000) / 10000;
+
+    if (bestIdx !== lastReportedChapter || roundedProgress !== lastReportedChapterProgress) {
       lastReportedChapter = bestIdx;
-      sendMessage({ type: 'chapterIndexUpdate', chapterIndex: bestIdx });
+      lastReportedChapterProgress = roundedProgress;
+      sendMessage({ type: 'chapterIndexUpdate', chapterIndex: bestIdx, chapterProgress: roundedProgress });
     }
   }
 
@@ -884,6 +942,36 @@ export const READER_BRIDGE_JS = `
     });
   }
 
+  /**
+   * Scroll to a specific position within a chapter section.
+   * progress is 0.0 (chapter start) to 1.0 (chapter end).
+   */
+  function scrollToChapterWithProgress(chapterIndex, progress) {
+    var section = document.querySelector('.chapter-section[data-chapter="' + chapterIndex + '"]');
+    if (!section) return;
+
+    lastReportedChapter = chapterIndex;
+
+    if (!progress || progress <= 0) {
+      section.scrollIntoView({ behavior: 'instant', block: 'start', inline: 'start' });
+      return;
+    }
+
+    var scrollEl = document.scrollingElement || document.documentElement;
+
+    if (isVertical) {
+      // vertical-rl: scroll to the section's reading-start (right edge),
+      // then offset leftward by progress * sectionWidth.
+      section.scrollIntoView({ behavior: 'instant', block: 'start', inline: 'start' });
+      var offset = progress * section.offsetWidth;
+      scrollEl.scrollLeft -= offset;
+    } else {
+      // horizontal-tb: scroll to section top, then offset downward.
+      var targetScroll = section.offsetTop + progress * section.offsetHeight;
+      scrollEl.scrollTo({ top: targetScroll, behavior: 'instant' });
+    }
+  }
+
   // Throttled scroll listener for chapter detection + progress
   var scrollTimer = null;
   window.addEventListener('scroll', function() {
@@ -932,6 +1020,9 @@ export const READER_BRIDGE_JS = `
           break;
         case 'scrollToChapter':
           scrollToChapter(cmd.chapterIndex, cmd.smooth);
+          break;
+        case 'scrollToChapterWithProgress':
+          scrollToChapterWithProgress(cmd.chapterIndex, cmd.progress);
           break;
       }
     } catch (err) {
@@ -1203,6 +1294,7 @@ export const READER_BRIDGE_JS = `
     clearDictionaryHighlight: clearDictionaryHighlight,
     // Continuous mode: scroll to a chapter section
     scrollToChapter: scrollToChapter,
+    scrollToChapterWithProgress: scrollToChapterWithProgress,
   };
 })();
 true; // Required for injectJavaScript
