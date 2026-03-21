@@ -5,11 +5,14 @@ import { BOOK_COVER_ASPECT_RATIO } from '@/constants/layout';
 
 interface BookCardProps {
   book: Book;
+  /** Fixed width in pixels. When provided, the card is constrained to this
+   *  width so books never exceed a maximum size on large screens. */
+  width?: number;
   onPress: () => void;
   onDelete: (book: Book) => void;
 }
 
-function BookCard({ book, onPress, onDelete }: BookCardProps) {
+function BookCard({ book, width, onPress, onDelete }: BookCardProps) {
   const handleLongPress = useCallback(() => {
     Alert.alert(
       'Remove Book',
@@ -27,7 +30,10 @@ function BookCard({ book, onPress, onDelete }: BookCardProps) {
 
   return (
     <Pressable
-      style={({ pressed }) => pressed && styles.pressed}
+      style={({ pressed }) => [
+        width != null && { width },
+        pressed && styles.pressed,
+      ]}
       onPress={onPress}
       onLongPress={handleLongPress}
       delayLongPress={500}

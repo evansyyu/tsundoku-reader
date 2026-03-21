@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, BackHandler, Platform, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -12,25 +12,13 @@ import ReaderControls from '@/components/ReaderControls';
 import { setChapterSelectionHandler, clearChapterSelectionHandler } from '@/utils/chapterSelection';
 import { setDictionaryDismissHandler, clearDictionaryDismissHandler } from '@/utils/dictionarySelection';
 import { findAllMatches } from '@/utils/dictionary';
+import { useReaderStatusBar } from '@/hooks/useReaderStatusBar';
 import { mediumTap } from '@/utils/haptics';
 import { mmkv } from '@/utils/storage';
 import type { ReaderLocation, WebViewToRNMessage } from '@/types/reader';
 
 /** MMKV key for the book currently open in the reader. */
 export const ACTIVE_BOOK_KEY = 'active_reader_book_id';
-
-/**
- * Returns true if a hex color is "dark" (luminance < 0.5).
- */
-function isDarkColor(hex: string): boolean {
-  const c = hex.replace('#', '');
-  const r = parseInt(c.substring(0, 2), 16) / 255;
-  const g = parseInt(c.substring(2, 4), 16) / 255;
-  const b = parseInt(c.substring(4, 6), 16) / 255;
-  // Perceived luminance formula
-  const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-  return luminance < 0.5;
-}
 
 export default function ReaderScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -65,7 +53,7 @@ export default function ReaderScreen() {
   bookRef.current = book;
 
   const readingTheme = useMemo(() => getReadingTheme(), [getReadingTheme]);
-  const statusBarStyle = isDarkColor(readingTheme.backgroundColor) ? 'light' : 'dark';
+  const statusBarStyle = useReaderStatusBar(readingTheme);
 
   // Persist this book as the active reader session so the app
   // can reopen it on next launch if the user didn't leave explicitly.
@@ -83,6 +71,34 @@ export default function ReaderScreen() {
     if (!id || !isReady) return;
     saveProgressRef.current(id, currentLocation.chapterIndex, currentLocation.pageNumber, currentLocation.chapterProgress);
   }, [id, isReady, currentLocation.chapterIndex, currentLocation.pageNumber, currentLocation.chapterProgress]);
+
+  // ANDROID_VERIFIED: BackHandler intercepts the hardware back button on Android
+  // so that progress is saved and the active-reader key is cleared before exiting.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+
+    const handler = BackHandler.addEventListener('hardwareBackPress', () => {
+      mmkv.delete(ACTIVE_BOOK_KEY);
+      router.back();
+      return true;
+    });
+    return () => handler.remove();
+  }, [router]);
+
+  // ANDROID_VERIFIED: AppState listener saves progress when the app goes to
+  // background. On Android the OS may kill the process without unmounting
+  // components, so relying on useEffect cleanup alone is insufficient.
+  const currentLocationRef = useRef(currentLocation);
+  currentLocationRef.current = currentLocation;
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'background' && id && isReady) {
+        const loc = currentLocationRef.current;
+        saveProgressRef.current(id, loc.chapterIndex, loc.pageNumber, loc.chapterProgress);
+      }
+    });
+    return () => sub.remove();
+  }, [id, isReady]);
 
   // Keep a ref to settings so handleMessage can check viewMode without depending on it
   const settingsRef = useRef(settings);
@@ -322,6 +338,46 @@ export default function ReaderScreen() {
     return () => clearDictionaryDismissHandler();
   }, [handleDictionaryDismiss]);
 
+  // Compute book-wide progress indicator off the render path.
+  // chapterPageCountsRef is a ref (not reactive) but recalculates when
+  // its dependent values (chapterIndex, pageNumber, totalPages) change.
+  const progressInfo = useMemo(() => {
+    if (!book) return { globalPage: 0, globalTotal: 0, pct: 0 };
+
+    let globalPage: number;
+    let globalTotal: number;
+
+    if (settings.reading.viewMode === 'paginated') {
+      const spineLen = book.spine.length;
+      const known = chapterPageCountsRef.current;
+      let knownSum = 0;
+      let knownCount = 0;
+      known.forEach((pages) => { knownSum += pages; knownCount++; });
+      const avgPages = knownCount > 0 ? knownSum / knownCount : totalPages;
+
+      let pagesBeforeCurrent = 0;
+      for (let i = 0; i < currentLocation.chapterIndex; i++) {
+        pagesBeforeCurrent += known.get(i) ?? avgPages;
+      }
+
+      globalPage = Math.round(pagesBeforeCurrent) + currentLocation.pageNumber + 1;
+      globalTotal = Math.round(pagesBeforeCurrent)
+        + (known.get(currentLocation.chapterIndex) ?? totalPages);
+      for (let i = currentLocation.chapterIndex + 1; i < spineLen; i++) {
+        globalTotal += Math.round(known.get(i) ?? avgPages);
+      }
+    } else {
+      globalPage = currentLocation.pageNumber + 1;
+      globalTotal = totalPages;
+    }
+
+    const pct = globalTotal > 0
+      ? Math.round((globalPage / globalTotal) * 100)
+      : 0;
+
+    return { globalPage, globalTotal, pct };
+  }, [book, settings.reading.viewMode, currentLocation.chapterIndex, currentLocation.pageNumber, totalPages]);
+
   if (!book) {
     return (
       <View className="flex-1 justify-center items-center bg-white dark:bg-black">
@@ -360,56 +416,20 @@ export default function ReaderScreen() {
       </View>
 
       {/* Progress indicator - visible at bottom-right when enabled */}
-      {isReady && !controlsVisible && settings.reading.showProgressIndicator && (() => {
-        let globalPage: number;
-        let globalTotal: number;
-
-        if (settings.reading.viewMode === 'paginated') {
-          // Build book-wide page numbers from per-chapter counts.
-          // For chapters not yet visited, estimate using the average of known counts.
-          const spineLen = book.spine.length;
-          const known = chapterPageCountsRef.current;
-          let knownSum = 0;
-          let knownCount = 0;
-          known.forEach((pages) => { knownSum += pages; knownCount++; });
-          const avgPages = knownCount > 0 ? knownSum / knownCount : totalPages;
-
-          let pagesBeforeCurrent = 0;
-          for (let i = 0; i < currentLocation.chapterIndex; i++) {
-            pagesBeforeCurrent += known.get(i) ?? avgPages;
-          }
-
-          globalPage = Math.round(pagesBeforeCurrent) + currentLocation.pageNumber + 1;
-          globalTotal = Math.round(pagesBeforeCurrent)
-            + (known.get(currentLocation.chapterIndex) ?? totalPages);
-          for (let i = currentLocation.chapterIndex + 1; i < spineLen; i++) {
-            globalTotal += Math.round(known.get(i) ?? avgPages);
-          }
-        } else {
-          // Continuous mode: scrollProgress already covers the whole book
-          globalPage = currentLocation.pageNumber + 1;
-          globalTotal = totalPages;
-        }
-
-        const pct = globalTotal > 0
-          ? Math.round((globalPage / globalTotal) * 100)
-          : 0;
-
-        return (
-          <View
-            className="absolute z-10"
-            style={{ bottom: insets.bottom + 8, right: 12 }}
-            pointerEvents="none"
+      {isReady && !controlsVisible && settings.reading.showProgressIndicator && (
+        <View
+          className="absolute z-10"
+          style={{ bottom: insets.bottom + 8, right: 12 }}
+          pointerEvents="none"
+        >
+          <Text
+            className="text-[10px] text-right"
+            style={{ color: readingTheme.textColor, opacity: 0.4 }}
           >
-            <Text
-              className="text-[10px] text-right"
-              style={{ color: readingTheme.textColor, opacity: 0.4 }}
-            >
-              {globalPage}/{globalTotal}{'  '}{pct}%
-            </Text>
-          </View>
-        );
-      })()}
+            {progressInfo.globalPage}/{progressInfo.globalTotal}{'  '}{progressInfo.pct}%
+          </Text>
+        </View>
+      )}
 
       <ReaderControls
         visible={controlsVisible}

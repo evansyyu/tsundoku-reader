@@ -5,6 +5,7 @@
  * for the book import flow.
  */
 
+// TODO: migrate to expo-file-system (non-legacy) when upgrading to SDK 55+
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Crypto from 'expo-crypto';
 import { parseEpub, extractEpubFiles } from './parser';
@@ -80,6 +81,7 @@ export async function importEpub(sourceUri: string, originalFileName: string): P
     lastReadAt: null,
     lastChapterIndex: 0,
     lastPageNumber: 0,
+    lastChapterProgress: 0,
   };
 
   return book;
