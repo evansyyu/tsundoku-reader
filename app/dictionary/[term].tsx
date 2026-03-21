@@ -10,6 +10,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  BackHandler,
   FlatList,
   Platform,
   Pressable,
@@ -25,6 +26,11 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { isLiquidGlassAvailable } from 'expo-glass-effect';
 import { LinearGradient } from 'expo-linear-gradient';
+import BottomSheet, {
+  BottomSheetBackdrop,
+  BottomSheetScrollView,
+  type BottomSheetBackdropProps,
+} from '@gorhom/bottom-sheet';
 import { useTheme } from '@/contexts/ThemeContext';
 import { lookupWord, lookupWordById, fetchSentences, lookupKanjiBatch } from '@/utils/dictionary';
 import { notifyDictionaryDismissed } from '@/utils/dictionarySelection';
@@ -424,12 +430,15 @@ function EntryPage({
   pageWidth,
   colors,
   isDark,
+  ScrollComponent,
 }: {
   loaded: LoadedEntry;
   pageWidth: number;
   colors: { text: string; textSecondary: string; tint: string; background: string };
   isDark: boolean;
+  ScrollComponent?: React.ComponentType<any>;
 }) {
+  const Scroller = ScrollComponent ?? ScrollView;
   const { entry, originalForm, deinflectionRules } = loaded;
   const senseHeaders = useMemo(() => buildSenseHeaders(entry.senses), [entry]);
   const kanaHW = useMemo(() => computeKanaHeadword(entry), [entry]);
@@ -460,7 +469,7 @@ function EntryPage({
   }, [headwordKanji]);
 
   return (
-    <ScrollView
+    <Scroller
       style={{ width: pageWidth }}
       contentContainerStyle={styles.content}
       contentInsetAdjustmentBehavior="automatic"
@@ -650,7 +659,7 @@ function EntryPage({
           ))}
         </View>
       )}
-    </ScrollView>
+    </Scroller>
   );
 }
 
@@ -682,6 +691,22 @@ export default function DictionaryScreen() {
   const [currentPage, setCurrentPage] = useState(0);
   const [pageWidth, setPageWidth] = useState(0);
   const flatListRef = useRef<FlatList<LoadedEntry>>(null);
+
+  // Android: gorhom BottomSheet
+  const bottomSheetRef = useRef<BottomSheet>(null);
+  const snapPoints = useMemo(() => ['50%', '85%'], []);
+
+  const renderBackdrop = useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop
+        {...props}
+        disappearsOnIndex={-1}
+        appearsOnIndex={0}
+        pressBehavior="close"
+      />
+    ),
+    [],
+  );
 
   // Load all entries on mount
   useEffect(() => {
@@ -727,6 +752,16 @@ export default function DictionaryScreen() {
     return () => { notifyDictionaryDismissed(); };
   }, []);
 
+  // Android: animate BottomSheet closed on hardware back press
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      bottomSheetRef.current?.close();
+      return true;
+    });
+    return () => sub.remove();
+  }, []);
+
   const handleScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       if (pageWidth <= 0) return;
@@ -743,6 +778,7 @@ export default function DictionaryScreen() {
         pageWidth={pageWidth}
         colors={colors}
         isDark={isDark}
+        ScrollComponent={Platform.OS === 'android' ? BottomSheetScrollView : undefined}
       />
     ),
     [pageWidth, colors, isDark]
@@ -762,80 +798,106 @@ export default function DictionaryScreen() {
     []
   );
 
+  const contentView = (
+    <View
+      collapsable={false}
+      style={{
+        flex: 1,
+        ...(Platform.OS !== 'android' && {
+          backgroundColor: glassAvailable ? 'transparent' : colors.background,
+        }),
+      }}
+      onLayout={(e) => setPageWidth(e.nativeEvent.layout.width)}
+    >
+      {loading ? (
+        <View style={styles.centered}>
+          <Text style={{ color: colors.textSecondary }}>Loading...</Text>
+        </View>
+      ) : loadedEntries.length === 0 ? (
+        <View style={styles.centered}>
+          <Text style={[styles.noResult, { color: colors.textSecondary }]}>
+            No entry found for &ldquo;{term ? decodeURIComponent(term) : ''}&rdquo;
+          </Text>
+        </View>
+      ) : pageWidth > 0 ? (
+        <>
+          <FlatList
+            ref={flatListRef}
+            data={loadedEntries}
+            renderItem={renderPage}
+            keyExtractor={keyExtractor}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            getItemLayout={getItemLayout}
+            bounces={false}
+            overScrollMode="never"
+          />
+
+          {/* ── Page indicator dots ────────────────────── */}
+          {loadedEntries.length > 1 && (
+            <View style={styles.pageDotsContainer} pointerEvents="none">
+              {loadedEntries.map((_, i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.pageDot,
+                    {
+                      backgroundColor:
+                        i === currentPage
+                          ? isDark ? '#FFFFFF' : '#000000'
+                          : isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.18)',
+                    },
+                  ]}
+                />
+              ))}
+            </View>
+          )}
+        </>
+      ) : null}
+    </View>
+  );
+
+  if (Platform.OS === 'android') {
+    return (
+      <View style={{ flex: 1 }}>
+        <BottomSheet
+          ref={bottomSheetRef}
+          snapPoints={snapPoints}
+          index={0}
+          enablePanDownToClose
+          onClose={handleDismiss}
+          backdropComponent={renderBackdrop}
+          backgroundStyle={{ backgroundColor: colors.background }}
+          handleIndicatorStyle={{
+            backgroundColor: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)',
+          }}
+        >
+          {contentView}
+        </BottomSheet>
+      </View>
+    );
+  }
+
   return (
     <>
       <Stack.Screen
         options={{
           title: '',
-          headerLeft: () =>
-            Platform.OS === 'ios' ? (
-              <Pressable onPress={handleDismiss} hitSlop={12}>
-                <Ionicons
-                  name="close-outline"
-                  size={36}
-                  color={isDark ? '#FFFFFF' : '#8E8E93'}
-                />
-              </Pressable>
-            ) : undefined,
+          headerLeft: () => (
+            <Pressable onPress={handleDismiss} hitSlop={12}>
+              <Ionicons
+                name="close-outline"
+                size={36}
+                color={isDark ? '#FFFFFF' : '#8E8E93'}
+              />
+            </Pressable>
+          ),
         }}
       />
-      <View
-        collapsable={false}
-        style={{
-          flex: 1,
-          backgroundColor: glassAvailable ? 'transparent' : colors.background,
-        }}
-        onLayout={(e) => setPageWidth(e.nativeEvent.layout.width)}
-      >
-        {loading ? (
-          <View style={styles.centered}>
-            <Text style={{ color: colors.textSecondary }}>Loading...</Text>
-          </View>
-        ) : loadedEntries.length === 0 ? (
-          <View style={styles.centered}>
-            <Text style={[styles.noResult, { color: colors.textSecondary }]}>
-              No entry found for &ldquo;{term ? decodeURIComponent(term) : ''}&rdquo;
-            </Text>
-          </View>
-        ) : pageWidth > 0 ? (
-          <>
-            <FlatList
-              ref={flatListRef}
-              data={loadedEntries}
-              renderItem={renderPage}
-              keyExtractor={keyExtractor}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              onScroll={handleScroll}
-              scrollEventThrottle={16}
-              getItemLayout={getItemLayout}
-              bounces={false}
-              overScrollMode="never"
-            />
-
-            {/* ── Page indicator dots ────────────────────── */}
-            {loadedEntries.length > 1 && (
-              <View style={styles.pageDotsContainer} pointerEvents="none">
-                {loadedEntries.map((_, i) => (
-                  <View
-                    key={i}
-                    style={[
-                      styles.pageDot,
-                      {
-                        backgroundColor:
-                          i === currentPage
-                            ? isDark ? '#FFFFFF' : '#000000'
-                            : isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.18)',
-                      },
-                    ]}
-                  />
-                ))}
-              </View>
-            )}
-          </>
-        ) : null}
-      </View>
+      {contentView}
     </>
   );
 }

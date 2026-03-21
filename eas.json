@@ -20,6 +20,7 @@
     },
     "production": {
       "distribution": "store",
+      "autoIncrement": true,
       "ios": {
         "resourceClass": "m-medium"
       },
@@ -29,7 +30,7 @@
   "submit": {
     "production": {
       "ios": {
-        "ascAppId": "6759067833",
+        "ascAppId": "6759117674",
         "appleTeamId": "Y7R3SD8HH4"
       }
     }

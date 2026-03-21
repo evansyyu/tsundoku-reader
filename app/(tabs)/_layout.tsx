@@ -7,7 +7,8 @@
  * Reference: https://docs.expo.dev/router/advanced/native-tabs/
  */
 import { DynamicColorIOS, Platform } from 'react-native';
-import { NativeTabs, Icon, Label } from 'expo-router/unstable-native-tabs';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { NativeTabs, Icon, Label, VectorIcon } from 'expo-router/unstable-native-tabs';
 import { isLiquidGlassAvailable } from 'expo-glass-effect';
 
 export default function TabLayout() {
@@ -25,15 +26,24 @@ export default function TabLayout() {
     >
       <NativeTabs.Trigger name="books">
         <Label>Books</Label>
-        <Icon sf={{ default: 'book', selected: 'book.fill' }} drawable="book" />
+        <Icon
+          sf={{ default: 'book', selected: 'book.fill' }}
+          androidSrc={<VectorIcon family={MaterialIcons} name="auto-stories" />}
+        />
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="search" role={glassAvailable ? 'search' : undefined}>
         <Label>Search</Label>
-        <Icon sf="magnifyingglass" drawable="search" />
+        <Icon
+          sf="magnifyingglass"
+          androidSrc={<VectorIcon family={MaterialIcons} name="search" />}
+        />
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="settings">
         <Label>Settings</Label>
-        <Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} drawable="settings" />
+        <Icon
+          sf={{ default: 'gearshape', selected: 'gearshape.fill' }}
+          androidSrc={<VectorIcon family={MaterialIcons} name="settings" />}
+        />
       </NativeTabs.Trigger>
     </NativeTabs>
   );
