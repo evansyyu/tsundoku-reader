@@ -1,6 +1,5 @@
 import React, { useMemo } from 'react';
 import {
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -43,6 +42,12 @@ export default function ReaderSettingsModal() {
   const currentFontIndex = FONT_FAMILIES.findIndex(
     (f) => f.value === reading.fontFamily
   );
+  const viewModeOptions = useMemo(() => ['Paginated', 'Continuous Scroll'], []);
+  const currentViewModeIndex = reading.viewMode === 'paginated' ? 0 : 1;
+  const VIEW_MODES: ViewMode[] = ['paginated', 'continuous'];
+  const textDirectionOptions = useMemo(() => ['Vertical', 'Horizontal'], []);
+  const currentTextDirectionIndex = reading.japaneseTextDirection === 'vertical' ? 0 : 1;
+  const TEXT_DIRECTIONS: TextDirection[] = ['vertical', 'horizontal'];
 
   return (
     <View collapsable={false} style={{ flex: 1 }}>
@@ -161,61 +166,37 @@ export default function ReaderSettingsModal() {
           />
         </View>
 
-      </View>
+        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}>
+          <MenuPicker
+            label="Page View"
+            options={viewModeOptions}
+            selectedIndex={currentViewModeIndex}
+            onSelect={(index) => {
+              if (index >= 0 && index < VIEW_MODES.length) {
+                updateReadingSettings({ viewMode: VIEW_MODES[index] });
+              }
+            }}
+          />
+        </View>
 
-      <SectionHeader title="View Mode" />
-
-      {/* View Mode */}
-      <View className="rounded-app-lg ofverflow-hidden bg-surface dark:bg-surface-dark mt-sm">
-        {(['paginated', 'continuous'] as ViewMode[]).map((mode, i) => (
-          <Pressable
-            key={mode}
-            className="flex-row items-center justify-between px-md py-3.5"
-            style={i === 0 ? { borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border } : undefined}
-            onPress={() => updateReadingSettings({ viewMode: mode })}
-          >
-            <Text className="text-lg text-black dark:text-white">
-              {mode === 'paginated' ? 'Paginated' : 'Continuous Scroll'}
-            </Text>
-            {reading.viewMode === mode && (
-              <Text className="text-[17px] font-semibold text-tint dark:text-tint-dark">✓</Text>
-            )}
-          </Pressable>
-        ))}
-      </View>
-
-      {isJapanese && (
-        <>
-          <SectionHeader title="Text Direction" />
-          <View className="rounded-app-lg overflow-hidden bg-surface dark:bg-surface-dark mt-sm">
-            {(['vertical', 'horizontal'] as TextDirection[]).map((dir, i) => (
-              <Pressable
-                key={dir}
-                className="flex-row items-center justify-between px-md py-3.5"
-                style={
-                  i === 0
-                    ? { borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border }
-                    : undefined
+        {isJapanese && (
+          <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}>
+            <MenuPicker
+              label="Text Direction"
+              options={textDirectionOptions}
+              selectedIndex={currentTextDirectionIndex}
+              onSelect={(index) => {
+                if (index >= 0 && index < TEXT_DIRECTIONS.length) {
+                  updateReadingSettings({ japaneseTextDirection: TEXT_DIRECTIONS[index] });
                 }
-                onPress={() => updateReadingSettings({ japaneseTextDirection: dir })}
-              >
-                <Text className="text-lg text-black dark:text-white">
-                  {dir === 'vertical' ? 'Vertical' : 'Horizontal'}
-                </Text>
-                {reading.japaneseTextDirection === dir && (
-                  <Text className="text-[17px] font-semibold text-tint dark:text-tint-dark">✓</Text>
-                )}
-              </Pressable>
-            ))}
+              }}
+            />
           </View>
-        </>
-      )}
+        )}
 
-      <SectionHeader title="Theme" />
-
-      {/* Reading Theme */}
-      <View className="mt-sm">
-        <ThemePicker showLabel={false} />
+        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}>
+          <ThemePicker />
+        </View>
       </View>
 
       <View className="h-xxl" />

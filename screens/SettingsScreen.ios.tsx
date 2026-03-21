@@ -130,19 +130,17 @@ export default function SettingsScreen() {
             />
 
             {/* Page View */}
-            <VStack spacing={4}>
-              <Text>Page View</Text>
-              <Picker
-                options={VIEW_MODE_LABELS}
-                selectedIndex={viewModeIndex >= 0 ? viewModeIndex : 0}
-                onOptionSelected={({ nativeEvent: { index } }) => {
-                  if (index >= 0 && index < VIEW_MODES.length) {
-                    updateReadingSettings({ viewMode: VIEW_MODES[index] });
-                  }
-                }}
-                variant="segmented"
-              />
-            </VStack>
+            <Picker
+              options={VIEW_MODE_LABELS}
+              selectedIndex={viewModeIndex >= 0 ? viewModeIndex : 0}
+              onOptionSelected={({ nativeEvent: { index } }) => {
+                if (index >= 0 && index < VIEW_MODES.length) {
+                  updateReadingSettings({ viewMode: VIEW_MODES[index] });
+                }
+              }}
+              variant="menu"
+              label="Page View"
+            />
 
             {/* Reading Theme — React Native view embedded in SwiftUI.
                frame modifier is required because SwiftUI controls the
@@ -167,9 +165,6 @@ export default function SettingsScreen() {
             </Button>
             <LabeledContent label="Version">
               <Text color="secondary">1.0.0</Text>
-            </LabeledContent>
-            <LabeledContent label="Made by">
-              <Text color="secondary">Evans Yu</Text>
             </LabeledContent>
           </Section>
       </Form>

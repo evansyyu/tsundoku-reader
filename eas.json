@@ -20,6 +20,13 @@
     },
     "production": {
       "distribution": "store",
+<<<<<<< HEAD
+      "android": {
+        "buildType": "apk"
+      },
+=======
+      "autoIncrement": true,
+>>>>>>> b1a2d5029ac6c237f72a0120f23c0f05c57c7eab
       "ios": {
         "resourceClass": "m-medium"
       },
@@ -29,7 +36,7 @@
   "submit": {
     "production": {
       "ios": {
-        "ascAppId": "6759067833",
+        "ascAppId": "6759117674",
         "appleTeamId": "Y7R3SD8HH4"
       }
     }

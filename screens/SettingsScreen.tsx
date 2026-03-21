@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   Linking,
   Pressable,
@@ -14,6 +14,7 @@ import { FONT_FAMILIES, FONT_SIZE_MAX, FONT_SIZE_MIN } from '@/constants/typogra
 import { LINE_HEIGHT_OPTIONS } from '@/constants/typography';
 import type { ViewMode } from '@/types/settings';
 import Slider from '@/components/Slider';
+import MenuPicker from '@/components/MenuPicker';
 import ToggleSwitch from '@/components/ToggleSwitch';
 import ThemePicker from '@/components/ThemePicker';
 
@@ -22,6 +23,24 @@ export default function SettingsScreen() {
   const { settings, updateReadingSettings } = useSettings();
 
   const { reading } = settings;
+
+  const lineHeightLabels = useMemo(
+    () => LINE_HEIGHT_OPTIONS.map((lh) => `${lh}x`),
+    [],
+  );
+  const currentLineHeightIndex = LINE_HEIGHT_OPTIONS.indexOf(reading.lineHeight);
+
+  const fontFamilyNames = useMemo(
+    () => FONT_FAMILIES.map((f) => f.name),
+    [],
+  );
+  const currentFontIndex = FONT_FAMILIES.findIndex(
+    (f) => f.value === reading.fontFamily,
+  );
+
+  const viewModeOptions = useMemo(() => ['Paginated', 'Continuous Scroll'], []);
+  const currentViewModeIndex = reading.viewMode === 'paginated' ? 0 : 1;
+  const VIEW_MODES: ViewMode[] = ['paginated', 'continuous'];
 
   return (
     <SafeAreaView
@@ -36,8 +55,9 @@ export default function SettingsScreen() {
       >
         <SectionHeader title="Reader" />
 
-        {/* Text Size */}
+        {/* Reader settings group */}
         <View className="rounded-app-lg overflow-hidden bg-surface dark:bg-surface-dark">
+          {/* Text Size */}
           <View className="flex-row items-center px-md py-sm gap-sm">
             <Text className="text-sm font-medium text-text-secondary dark:text-text-secondary-dark">A</Text>
             <Slider
@@ -51,52 +71,38 @@ export default function SettingsScreen() {
             />
             <Text className="text-[22px] font-medium text-text-secondary dark:text-text-secondary-dark">A</Text>
           </View>
-        </View>
 
-        {/* Line Height */}
-        <View className="rounded-app-lg overflow-hidden bg-surface dark:bg-surface-dark mt-sm">
-          {LINE_HEIGHT_OPTIONS.map((lh, i) => (
-            <Pressable
-              key={lh}
-              className="flex-row items-center justify-between px-md py-3.5"
-              style={i < LINE_HEIGHT_OPTIONS.length - 1 ? { borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border } : undefined}
-              onPress={() => updateReadingSettings({ lineHeight: lh })}
-            >
-              <Text className="text-base text-black dark:text-white">{lh}x</Text>
-              {reading.lineHeight === lh && (
-                <Text className="text-[17px] font-semibold text-tint dark:text-tint-dark">✓</Text>
-              )}
-            </Pressable>
-          ))}
-        </View>
+          <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}>
+          <MenuPicker
+            label="Line Height"
+            options={lineHeightLabels}
+            selectedIndex={currentLineHeightIndex >= 0 ? currentLineHeightIndex : 2}
+            onSelect={(index) => {
+              if (index >= 0 && index < LINE_HEIGHT_OPTIONS.length) {
+                updateReadingSettings({ lineHeight: LINE_HEIGHT_OPTIONS[index] });
+              }
+            }}
+          />
+          </View>
 
-        {/* Font Family */}
-        <View className="rounded-app-lg overflow-hidden bg-surface dark:bg-surface-dark mt-sm">
-          {FONT_FAMILIES.map((font, i) => (
-            <Pressable
-              key={font.id}
-              className="flex-row items-center justify-between px-md py-3.5"
-              style={i < FONT_FAMILIES.length - 1 ? { borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border } : undefined}
-              onPress={() => updateReadingSettings({ fontFamily: font.value })}
-            >
-              <Text
-                className="text-base text-black dark:text-white"
-                // StyleSheet kept: fontFamily is a dynamic runtime value
-                style={{ fontFamily: font.value }}
-              >
-                {font.name}
-              </Text>
-              {reading.fontFamily === font.value && (
-                <Text className="text-[17px] font-semibold text-tint dark:text-tint-dark">✓</Text>
-              )}
-            </Pressable>
-          ))}
-        </View>
+          <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}>
+          <MenuPicker
+            label="Font Family"
+            options={fontFamilyNames}
+            selectedIndex={currentFontIndex >= 0 ? currentFontIndex : 0}
+            onSelect={(index) => {
+              if (index >= 0 && index < FONT_FAMILIES.length) {
+                updateReadingSettings({ fontFamily: FONT_FAMILIES[index].value });
+              }
+            }}
+          />
+          </View>
 
-        {/* Furigana Toggle */}
-        <View className="rounded-app-lg overflow-hidden bg-surface dark:bg-surface-dark mt-sm">
+          {/* Furigana Toggle */}
           <View
             style={{
+              borderTopWidth: StyleSheet.hairlineWidth,
+              borderColor: colors.border,
               flexDirection: 'row',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -151,30 +157,23 @@ export default function SettingsScreen() {
               color={colors.tint}
             />
           </View>
-        </View>
 
-        {/* View Mode */}
-        <View className="rounded-app-lg overflow-hidden bg-surface dark:bg-surface-dark mt-sm">
-          {(['paginated', 'continuous'] as ViewMode[]).map((mode, i) => (
-            <Pressable
-              key={mode}
-              className="flex-row items-center justify-between px-md py-3.5"
-              style={i === 0 ? { borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border } : undefined}
-              onPress={() => updateReadingSettings({ viewMode: mode })}
-            >
-              <Text className="text-base text-black dark:text-white">
-                {mode === 'paginated' ? 'Paginated' : 'Continuous Scroll'}
-              </Text>
-              {reading.viewMode === mode && (
-                <Text className="text-[17px] font-semibold text-tint dark:text-tint-dark">✓</Text>
-              )}
-            </Pressable>
-          ))}
-        </View>
+          <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}>
+            <MenuPicker
+              label="View Mode"
+              options={viewModeOptions}
+              selectedIndex={currentViewModeIndex}
+              onSelect={(index) => {
+                if (index >= 0 && index < VIEW_MODES.length) {
+                  updateReadingSettings({ viewMode: VIEW_MODES[index] });
+                }
+              }}
+            />
+          </View>
 
-        {/* Reading Theme */}
-        <View className="mt-sm">
-          <ThemePicker />
+          <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}>
+            <ThemePicker />
+          </View>
         </View>
 
         <SectionHeader title="About" />
@@ -207,12 +206,6 @@ export default function SettingsScreen() {
           >
             <Text className="text-base text-black dark:text-white">Version</Text>
             <Text className="text-base text-text-secondary dark:text-text-secondary-dark">1.0.0</Text>
-          </View>
-
-          {/* Made by */}
-          <View className="flex-row items-center justify-between px-md py-3.5">
-            <Text className="text-base text-black dark:text-white">Made by</Text>
-            <Text className="text-base text-text-secondary dark:text-text-secondary-dark">Evans Yu</Text>
           </View>
         </View>
 

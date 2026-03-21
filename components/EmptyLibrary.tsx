@@ -8,7 +8,6 @@ export default function EmptyLibrary() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.emoji}>📚</Text>
       <Text style={[styles.title, { color: colors.text }]}>
         Your Library is Empty
       </Text>
@@ -21,6 +20,7 @@ export default function EmptyLibrary() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: Spacing.xl,

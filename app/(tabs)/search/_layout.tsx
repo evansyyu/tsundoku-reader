@@ -16,6 +16,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 export default function SearchLayout() {
   const glassAvailable = isLiquidGlassAvailable();
   const { isDark, colors } = useTheme();
+  const headerTextColor = isDark ? '#FFFFFF' : '#000000';
 
   return (
     <Stack
@@ -24,8 +25,11 @@ export default function SearchLayout() {
         headerLargeTitleShadowVisible: false,
         headerShadowVisible: false,
         headerBlurEffect: glassAvailable ? undefined : isDark ? 'dark' : 'light',
-        ...(Platform.OS === 'ios' && {
-          headerTintColor: DynamicColorIOS({ dark: 'white', light: 'black' }) as unknown as string,
+        headerTintColor: Platform.OS === 'ios'
+          ? DynamicColorIOS({ dark: 'white', light: 'black' }) as unknown as string
+          : headerTextColor,
+        ...(Platform.OS === 'android' && {
+          headerTitleStyle: { color: headerTextColor },
         }),
         headerLargeStyle: {
           backgroundColor: glassAvailable ? 'transparent' : colors.background,
