@@ -21,9 +21,13 @@
     "production": {
       "distribution": "store",
 <<<<<<< HEAD
+<<<<<<< HEAD
       "android": {
         "buildType": "apk"
       },
+=======
+      "autoIncrement": true,
+>>>>>>> b1a2d5029ac6c237f72a0120f23c0f05c57c7eab
 =======
       "autoIncrement": true,
 >>>>>>> b1a2d5029ac6c237f72a0120f23c0f05c57c7eab
