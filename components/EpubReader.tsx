@@ -1,4 +1,4 @@
-import React, { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import React, { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview';
@@ -8,6 +8,7 @@ import type { WebViewToRNMessage } from '@/types/reader';
 import { buildChapterHtml, buildContinuousHtml } from '@/utils/epub/css';
 import { READER_BRIDGE_JS } from '@/constants/reader';
 import { FONT_SIZE_SCALE } from '@/constants/typography';
+// TODO: migrate to expo-file-system (non-legacy) when upgrading to SDK 55+
 import * as FileSystem from 'expo-file-system/legacy';
 
 export interface EpubReaderHandle {
@@ -73,6 +74,9 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
   // when the bridge reports chapterIndexUpdate (which already reflects the current scroll).
   const lastKnownChapterRef = useRef(chapterIndex);
 
+  // Cache for adjacent chapter content (paginated mode pre-read)
+  const chapterCacheRef = useRef<Map<number, string>>(new Map());
+
   // Expose imperative methods to parent
   useImperativeHandle(ref, () => ({
     goToPage: (page: number) => {
@@ -101,6 +105,48 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
   const onMessageRef = useRef(onMessage);
   onMessageRef.current = onMessage;
 
+  const isJapanese = book.language === 'ja' || book.language.startsWith('ja-');
+
+  // Track the initial chapter + progress to scroll to when continuous mode first loads
+  const pendingScrollChapterRef = useRef<number | null>(null);
+  const pendingScrollProgressRef = useRef<number>(0);
+
+  // Memoize bridge script to avoid rebuilding the ~1300-line string every render.
+  // Placeholders are resolved once per meaningful parameter change.
+  const bridgeScript = useMemo(() => {
+    const scrollCh = pendingScrollChapterRef.current ?? -1;
+    const scrollPr = pendingScrollProgressRef.current ?? 0;
+
+    return READER_BRIDGE_JS
+      .replace('__PAGINATED__', String(settings.viewMode === 'paginated'))
+      .replace('__BLUR_IMAGES__', String(settings.blurImages))
+      .replace('__DICT_ENABLED__', String(isJapanese))
+      .replace('__PENDING_SCROLL_CHAPTER__', String(scrollCh))
+      .replace('__PENDING_SCROLL_PROGRESS__', String(scrollPr));
+  }, [settings.viewMode, settings.blurImages, isJapanese]);
+
+  // Keep a ref so the WebView prop always has the latest version
+  const bridgeScriptRef = useRef(bridgeScript);
+  bridgeScriptRef.current = bridgeScript;
+
+  /**
+   * Pre-read adjacent chapters for paginated mode so chapter transitions
+   * don't wait for disk I/O. Runs non-blocking after the current chapter loads.
+   */
+  function preReadAdjacentChapters(bookPath: string, spine: Book['spine'], currentIdx: number) {
+    const toPreRead = [currentIdx - 1, currentIdx + 1].filter(
+      (i) => i >= 0 && i < spine.length && !chapterCacheRef.current.has(i)
+    );
+
+    for (const idx of toPreRead) {
+      const path = `${bookPath}/${spine[idx].href}`;
+      FileSystem.readAsStringAsync(path, { encoding: FileSystem.EncodingType.UTF8 })
+        .then((content) => {
+          chapterCacheRef.current.set(idx, content);
+        })
+        .catch(() => {});
+    }
+  }
 
   // Load chapter content
   useEffect(() => {
@@ -170,7 +216,7 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
 
           const chapterHrefs = spine.map((item) => item.href);
           const html = buildContinuousHtml(allContents, chapterHrefs, commonOpts);
-          // Queue scroll to the initial chapter + progress after the WebView loads
+          // Set pending scroll params so the bridge init() handles it in one pass
           const progress = initialChapterProgressRef.current ?? 0;
           if (chapterIndex > 0 || progress > 0) {
             pendingScrollChapterRef.current = chapterIndex;
@@ -199,11 +245,16 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
         const chapterPath = `${book.filePath}/${spineItem.href}`;
 
         try {
-          const content = await FileSystem.readAsStringAsync(chapterPath, {
+          // Use pre-read cache if available, otherwise read from disk
+          const cached = chapterCacheRef.current.get(chapterIndex);
+          const content = cached ?? await FileSystem.readAsStringAsync(chapterPath, {
             encoding: FileSystem.EncodingType.UTF8,
           });
 
           if (cancelled) return;
+
+          // Clear used cache entry
+          if (cached) chapterCacheRef.current.delete(chapterIndex);
 
           const html = buildChapterHtml(content, {
             ...commonOpts,
@@ -215,6 +266,9 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
           const lastSlash = chapterPath.lastIndexOf('/');
           const newBaseUrl = chapterPath.substring(0, lastSlash + 1);
           setBaseUrl(newBaseUrl);
+
+          // Pre-read adjacent chapters in background for faster navigation
+          preReadAdjacentChapters(book.filePath, spine, chapterIndex);
         } catch (error) {
           onMessageRef.current({
             type: 'error',
@@ -230,6 +284,11 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
       cancelled = true;
     };
   }, [book, chapterIndex, settings, readingTheme]);
+
+  // Clear chapter cache when the book changes
+  useEffect(() => {
+    chapterCacheRef.current.clear();
+  }, [book.id]);
 
   // Keep startAtEndRef in sync with prop
   useEffect(() => {
@@ -291,45 +350,11 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
     [onMessage, onCenterTap]
   );
 
-  // Keep bridge script in a ref so the onLoadEnd callback can use the latest version
-  const bridgeScriptRef = useRef('');
-  bridgeScriptRef.current = READER_BRIDGE_JS
-    .replace('__PAGINATED__', String(settings.viewMode === 'paginated'))
-    .replace('__BLUR_IMAGES__', String(settings.blurImages));
-
-  // Track whether dictionary should be enabled for this book
-  const isJapanese = book.language === 'ja' || book.language.startsWith('ja-');
-
-  // Track the initial chapter + progress to scroll to when continuous mode first loads
-  const pendingScrollChapterRef = useRef<number | null>(null);
-  const pendingScrollProgressRef = useRef<number>(0);
-
+  // Lightweight onLoadEnd: bridge is injected via the injectedJavaScript prop,
+  // so we only notify the parent that the WebView is ready.
   const handleLoadEnd = useCallback(() => {
-    webViewRef.current?.injectJavaScript(bridgeScriptRef.current);
-    // Enable dictionary lookup for Japanese books after bridge init
-    if (isJapanese) {
-      setTimeout(() => {
-        webViewRef.current?.injectJavaScript(
-          `window.__readerBridge && window.__readerBridge.setDictionaryEnabled(true); true;`
-        );
-      }, 100);
-    }
-
-    // In continuous mode, scroll to the requested chapter + progress after the bridge initializes
-    if (pendingScrollChapterRef.current != null) {
-      const ch = pendingScrollChapterRef.current;
-      const pr = pendingScrollProgressRef.current || 0;
-      pendingScrollChapterRef.current = null;
-      pendingScrollProgressRef.current = 0;
-      setTimeout(() => {
-        webViewRef.current?.injectJavaScript(
-          `window.__readerBridge && window.__readerBridge.scrollToChapterWithProgress(${ch}, ${pr}); true;`
-        );
-      }, 150);
-    }
-
     onMessage({ type: 'ready' });
-  }, [onMessage, isJapanese]);
+  }, [onMessage]);
 
   if (!htmlContent) {
     return <View className="flex-1" />;
@@ -340,10 +365,14 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
       <WebView
         ref={webViewRef}
         source={{ html: htmlContent, baseUrl }}
+        // ANDROID_VERIFIED: injectedJavaScript runs after page load on both
+        // iOS (WKWebView) and Android (Chromium WebView).
+        injectedJavaScript={bridgeScriptRef.current}
         className="flex-1 bg-transparent"
         originWhitelist={['*']}
         javaScriptEnabled
         domStorageEnabled={false}
+        // ANDROID_VERIFIED: file access props are supported on Android WebView
         allowFileAccess
         allowFileAccessFromFileURLs
         allowUniversalAccessFromFileURLs

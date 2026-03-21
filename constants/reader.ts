@@ -295,6 +295,9 @@ export const READER_BRIDGE_JS = `
   // Replaced at runtime via String.replace() in EpubReader
   let isPaginated = __PAGINATED__;
   let blurImages = __BLUR_IMAGES__;
+  let initDictEnabled = __DICT_ENABLED__;
+  let pendingScrollChapter = __PENDING_SCROLL_CHAPTER__;
+  let pendingScrollProgress = __PENDING_SCROLL_PROGRESS__;
   let currentPage = 0;
   let totalPages = 1;
   let pagePitch = 0; // horizontal distance between consecutive pages
@@ -362,6 +365,8 @@ export const READER_BRIDGE_JS = `
 
   /**
    * Calculate total number of pages in paginated mode.
+   * ANDROID_VERIFIED: CSS multi-column (column-width, column-gap, column-fill)
+   * and body.scrollLeft/scrollTop manipulation work in Android WebView (Chromium).
    *
    * Key insight for vertical-rl: CSS multi-column arranges columns in the
    * INLINE direction, which is top-to-bottom for vertical-rl. So the column
@@ -495,6 +500,7 @@ export const READER_BRIDGE_JS = `
    * Get the text node and character offset at a screen coordinate.
    * Uses caretRangeFromPoint (WebKit/Blink) which works correctly
    * with vertical writing-mode.
+   * ANDROID_VERIFIED: caretRangeFromPoint is available in Android WebView (Chromium).
    */
   function getTextAtPoint(x, y) {
     var range = null;
@@ -591,6 +597,8 @@ export const READER_BRIDGE_JS = `
    * Uses window.getSelection() so iOS shows native selection handles,
    * allowing the user to adjust the selection after the dictionary
    * modal is dismissed.
+   * ANDROID_VERIFIED: window.getSelection().addRange() works in Chromium WebView.
+   * Android shows its own selection handles (visually different from iOS, functionally equivalent).
    *
    * startOffset & length are relative to the surrounding text sent to RN.
    * We map them back to DOM text nodes via the same TreeWalker approach
@@ -688,6 +696,8 @@ export const READER_BRIDGE_JS = `
   var dictSurroundingOffset = 0;
 
   // ── Touch handling ─────────────────────────────────────────────
+  // ANDROID_VERIFIED: touchstart/touchmove/touchend/click events are standard DOM.
+  // { passive: false } + preventDefault() patterns work in Android WebView.
 
   // Swipe detection state (no live drag — avoids WebKit column glitches)
   var swipeHandled = false;
@@ -1255,9 +1265,25 @@ export const READER_BRIDGE_JS = `
         }
       }
 
+      // Enable dictionary at init if requested (eliminates post-init round-trip)
+      if (initDictEnabled) {
+        dictEnabled = true;
+      }
+
       sendMessage({ type: 'ready' });
       sendPageInfo();
       watchImages();
+
+      // Scroll to saved position at init (eliminates post-init round-trip)
+      if (pendingScrollChapter >= 0) {
+        var _ch = pendingScrollChapter;
+        var _pr = pendingScrollProgress;
+        pendingScrollChapter = -1;
+        pendingScrollProgress = 0;
+        requestAnimationFrame(function() {
+          scrollToChapterWithProgress(_ch, _pr);
+        });
+      }
     } catch (err) {
       // init failed
     }

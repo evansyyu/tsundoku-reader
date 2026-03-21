@@ -6,6 +6,7 @@
  */
 
 import * as SQLite from 'expo-sqlite';
+// TODO: migrate to expo-file-system (non-legacy) when upgrading to SDK 55+
 import * as FileSystem from 'expo-file-system/legacy';
 import { Asset } from 'expo-asset';
 import type {
