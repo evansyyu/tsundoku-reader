@@ -65,10 +65,11 @@ function RootNavigator() {
         <Stack.Screen
           name="dictionary/[term]"
           options={{
-            presentation: Platform.OS === 'ios' ? 'formSheet' : 'modal',
+            presentation: Platform.OS === 'ios' ? 'formSheet' : 'transparentModal',
+            ...(Platform.OS === 'android' && { animation: 'none' }),
             sheetGrabberVisible: true,
             sheetAllowedDetents: [0.5, 0.85],
-            headerShown: true,
+            headerShown: Platform.OS !== 'android',
             headerLargeTitle: false,
             title: '',
             headerTransparent: Platform.OS === 'ios',
@@ -77,7 +78,9 @@ function RootNavigator() {
               backgroundColor: Platform.OS === 'ios' ? 'transparent' : colors.background,
             },
             contentStyle: {
-              backgroundColor: glassAvailable ? 'transparent' : colors.background,
+              backgroundColor: Platform.OS === 'android'
+                ? 'transparent'
+                : glassAvailable ? 'transparent' : colors.background,
             },
             headerLeft: () =>
               Platform.OS === 'ios' ? (

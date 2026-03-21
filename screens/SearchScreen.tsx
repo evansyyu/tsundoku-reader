@@ -60,7 +60,7 @@ export default function SearchScreen() {
         renderItem={renderItem}
         keyExtractor={keyExtractor}
         ListEmptyComponent={
-          <View className="items-center pt-24 px-lg">
+          <View className="flex-1 items-center justify-center pt-24 px-lg">
             <Text className="text-base text-center leading-6 text-text-secondary dark:text-text-secondary-dark">
               {query.trim()
                 ? 'No books match your search.'
@@ -69,7 +69,10 @@ export default function SearchScreen() {
           </View>
         }
         className="px-md"
-        contentContainerStyle={{ paddingBottom: 32 }}
+        contentContainerStyle={{
+          paddingBottom: 32,
+          flexGrow: filteredBooks.length === 0 ? 1 : 0,
+        }}
         showsVerticalScrollIndicator={false}
       />
     </>

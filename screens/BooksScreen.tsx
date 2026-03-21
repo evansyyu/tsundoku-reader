@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo } from 'react';
-import { FlatList, StyleSheet, View } from 'react-native';
+import { FlatList, Platform, StyleSheet, View } from 'react-native';
 // SafeAreaView import kept for potential iOS <26 horizontal inset support
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -80,11 +80,14 @@ export default function BooksScreen() {
         renderItem={renderBookCard}
         keyExtractor={keyExtractor}
         numColumns={numColumns}
-        contentContainerStyle={styles.gridContent}
+        contentContainerStyle={[
+          styles.gridContent,
+          books.length === 0 && !isLoading && styles.gridContentEmpty,
+        ]}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={<EmptyLibrary />}
       />
-      <UploadButton />
+      {Platform.OS !== 'android' && <UploadButton />}
     </>
   );
 }
@@ -94,6 +97,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: GRID_PADDING - HALF_GAP,
     paddingTop: GRID_PADDING,
     paddingBottom: 100,
+  },
+  /** Lets ListEmptyComponent fill the FlatList viewport when there are no books */
+  gridContentEmpty: {
+    flexGrow: 1,
   },
   cardWrapper: {
     paddingHorizontal: HALF_GAP,
