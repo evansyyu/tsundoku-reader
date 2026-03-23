@@ -20,9 +20,6 @@
     },
     "production": {
       "distribution": "store",
-      "android": {
-        "buildType": "apk"
-      },
       "autoIncrement": true,
       "ios": {
         "resourceClass": "m-medium"
