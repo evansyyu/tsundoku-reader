@@ -33,6 +33,8 @@ interface EpubReaderProps {
   initialPage?: number;
   /** Fraction (0.0-1.0) through the chapter for cross-mode position restoration */
   initialChapterProgress?: number;
+  /** Live chapter progress from ReaderScreen state (used for position guard on settings change) */
+  currentChapterProgress?: number;
   onMessage: (message: WebViewToRNMessage) => void;
   onCenterTap: () => void;
 }
@@ -53,6 +55,7 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
     startAtEnd = false,
     initialPage,
     initialChapterProgress,
+    currentChapterProgress,
     onMessage,
     onCenterTap,
   },
@@ -67,12 +70,19 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
 
   // Track whether continuous mode content is already loaded (all chapters at once)
   const continuousLoadedBookId = useRef<string | null>(null);
-  // Fingerprint of settings+theme used for the current continuous build.
-  // When this changes we must rebuild even if the book ID hasn't changed.
-  const continuousSettingsFingerprint = useRef<string | null>(null);
+  // Structural fingerprint: settings that require full HTML rebuild (writing mode, blur, etc.)
+  const continuousStructuralFP = useRef<string | null>(null);
+  // Styling fingerprint: CSS-only settings that can be applied via bridge commands
+  const continuousStylingFP = useRef<string | null>(null);
   // Track the last chapter index we know about to avoid unnecessary scrollToChapter calls
   // when the bridge reports chapterIndexUpdate (which already reflects the current scroll).
   const lastKnownChapterRef = useRef(chapterIndex);
+  // Pending position restore for structural rebuilds in continuous mode.
+  // Set before rebuild, consumed when bridge sends 'ready'.
+  const pendingPositionRestoreRef = useRef<{ chapterIndex: number; progress: number } | null>(null);
+  // LINK NAV: Track whether the initial HTML has been loaded into the WebView.
+  // After initial load, all navigations are blocked to prevent raw XHTML loading.
+  const initialLoadCompleteRef = useRef(false);
 
   // Cache for adjacent chapter content (paginated mode pre-read)
   const chapterCacheRef = useRef<Map<number, string>>(new Map());
@@ -107,22 +117,13 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
 
   const isJapanese = book.language === 'ja' || book.language.startsWith('ja-');
 
-  // Track the initial chapter + progress to scroll to when continuous mode first loads
-  const pendingScrollChapterRef = useRef<number | null>(null);
-  const pendingScrollProgressRef = useRef<number>(0);
-
   // Memoize bridge script to avoid rebuilding the ~1300-line string every render.
   // Placeholders are resolved once per meaningful parameter change.
   const bridgeScript = useMemo(() => {
-    const scrollCh = pendingScrollChapterRef.current ?? -1;
-    const scrollPr = pendingScrollProgressRef.current ?? 0;
-
     return READER_BRIDGE_JS
       .replace('__PAGINATED__', String(settings.viewMode === 'paginated'))
       .replace('__BLUR_IMAGES__', String(settings.blurImages))
-      .replace('__DICT_ENABLED__', String(isJapanese))
-      .replace('__PENDING_SCROLL_CHAPTER__', String(scrollCh))
-      .replace('__PENDING_SCROLL_PROGRESS__', String(scrollPr));
+      .replace('__DICT_ENABLED__', String(isJapanese));
   }, [settings.viewMode, settings.blurImages, isJapanese]);
 
   // Keep a ref so the WebView prop always has the latest version
@@ -148,9 +149,18 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
     }
   }
 
+  // Keep live progress accessible to the effect without adding it as a dependency
+  const currentChapterProgressRef = useRef(currentChapterProgress ?? 0);
+  currentChapterProgressRef.current = currentChapterProgress ?? 0;
+
   // Load chapter content
   useEffect(() => {
     let cancelled = false;
+
+    // Reset navigation guard so the WebView accepts the new HTML source.
+    // Without this, onShouldStartLoadWithRequest may block the load after
+    // a link tap or settings change sets initialLoadCompleteRef to true.
+    initialLoadCompleteRef.current = false;
 
     const isContinuous = settings.viewMode === 'continuous';
     const isJapaneseBook = book.language === 'ja' || book.language.startsWith('ja-');
@@ -171,37 +181,78 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
       blurImages: settings.blurImages,
     };
 
-    // Build a fingerprint from all values that affect the rendered HTML so we
-    // can detect when continuous mode needs a full rebuild (not just a scroll).
-    const fingerprint = JSON.stringify(commonOpts);
+    // Structural fingerprint: changes that require full HTML rebuild
+    const structuralFP = JSON.stringify({
+      isVertical,
+      blurImages: settings.blurImages,
+    });
+
+    // Styling fingerprint: CSS-only changes that can be applied via bridge commands
+    const stylingFP = JSON.stringify({
+      textColor: readingTheme.textColor,
+      backgroundColor: readingTheme.backgroundColor,
+      fontSize,
+      lineHeight: settings.lineHeight,
+      fontFamily: settings.fontFamily,
+      pageMargin: settings.pageMargin,
+      showFurigana: settings.showFurigana,
+    });
 
     async function loadContent() {
       const spine = book.spine;
 
-      // Refresh the chapter progress ref from the prop so mode switches
-      // and settings changes pick up the latest saved position.
-      initialChapterProgressRef.current = initialChapterProgress;
+      // currentChapterProgressRef always reflects the latest position: it starts
+      // from the saved progress (via initial state in ReaderScreen) and is updated
+      // in real-time by pageInfo / chapterIndexUpdate bridge messages.
+      initialChapterProgressRef.current = currentChapterProgressRef.current;
 
       if (isContinuous) {
         // ── Continuous mode: load ALL chapters at once ──
-        // If already loaded for this book AND settings haven't changed,
-        // only scroll if the chapter changed from a user action.
-        if (
-          continuousLoadedBookId.current === book.id &&
-          continuousSettingsFingerprint.current === fingerprint
-        ) {
-          if (chapterIndex !== lastKnownChapterRef.current) {
-            lastKnownChapterRef.current = chapterIndex;
-            setTimeout(() => {
-              webViewRef.current?.injectJavaScript(
-                `window.__readerBridge && window.__readerBridge.scrollToChapter(${chapterIndex}, true); true;`
-              );
-            }, 50);
+        if (continuousLoadedBookId.current === book.id) {
+          // Book is already loaded. Check what changed.
+          if (continuousStructuralFP.current === structuralFP) {
+            // CSS variable changes (theme, font, margin) are applied via bridge
+            // commands which preserve scroll position (no full rebuild needed).
+            if (continuousStylingFP.current !== stylingFP) {
+              const wv = webViewRef.current;
+              if (wv) {
+                wv.injectJavaScript(
+                  `window.__readerBridge && window.__readerBridge.setTheme('${readingTheme.textColor}', '${readingTheme.backgroundColor}'); true;`
+                );
+                wv.injectJavaScript(
+                  `window.__readerBridge && window.__readerBridge.setTypography(${fontSize}, ${settings.lineHeight}, '${settings.fontFamily}'); true;`
+                );
+                wv.injectJavaScript(
+                  `window.__readerBridge && window.__readerBridge.setPageMargin(${settings.pageMargin}); true;`
+                );
+                wv.injectJavaScript(
+                  `window.__readerBridge && window.__readerBridge.setFurigana(${settings.showFurigana}); true;`
+                );
+              }
+              continuousStylingFP.current = stylingFP;
+            }
+
+            // Handle chapter scroll from TOC selection
+            if (chapterIndex !== lastKnownChapterRef.current) {
+              lastKnownChapterRef.current = chapterIndex;
+              setTimeout(() => {
+                webViewRef.current?.injectJavaScript(
+                  `window.__readerBridge && window.__readerBridge.scrollToChapter(${chapterIndex}, true); true;`
+                );
+              }, 50);
+            }
+            // Tell parent we're ready immediately (content is already in WebView)
+            onMessageRef.current({ type: 'ready' });
+            return;
           }
-          // Tell parent we're ready immediately (content is already in WebView)
-          onMessageRef.current({ type: 'ready' });
-          return;
         }
+
+        // Full (re)build: structural change or first load.
+        // Capture position so we can restore after the WebView reloads.
+        pendingPositionRestoreRef.current = {
+          chapterIndex,
+          progress: currentChapterProgressRef.current,
+        };
 
         try {
           const allContents: string[] = [];
@@ -216,16 +267,12 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
 
           const chapterHrefs = spine.map((item) => item.href);
           const html = buildContinuousHtml(allContents, chapterHrefs, commonOpts);
-          // Set pending scroll params so the bridge init() handles it in one pass
-          const progress = initialChapterProgressRef.current ?? 0;
-          if (chapterIndex > 0 || progress > 0) {
-            pendingScrollChapterRef.current = chapterIndex;
-            pendingScrollProgressRef.current = progress;
-          }
+
           setHtmlContent(html);
           setBaseUrl(`${book.filePath}/`);
           continuousLoadedBookId.current = book.id;
-          continuousSettingsFingerprint.current = fingerprint;
+          continuousStructuralFP.current = structuralFP;
+          continuousStylingFP.current = stylingFP;
         } catch (error) {
           onMessageRef.current({
             type: 'error',
@@ -235,7 +282,8 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
       } else {
         // ── Paginated mode: load single chapter ──
         continuousLoadedBookId.current = null;
-        continuousSettingsFingerprint.current = null;
+        continuousStructuralFP.current = null;
+        continuousStylingFP.current = null;
 
         if (chapterIndex < 0 || chapterIndex >= spine.length) {
           return;
@@ -300,9 +348,6 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
       try {
         const data = JSON.parse(event.nativeEvent.data);
 
-        // Ignore WebView console forwarding messages
-        if (data.type === 'console') return;
-
         if (data.type === 'centerTap') {
           onCenterTap();
           return;
@@ -312,6 +357,18 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
         // so the loadContent effect knows not to inject an unnecessary scroll.
         if (data.type === 'chapterIndexUpdate') {
           lastKnownChapterRef.current = data.chapterIndex;
+        }
+
+        // Position restore after structural rebuild in continuous mode.
+        // The bridge has initialized; now scroll to the captured position.
+        if (data.type === 'ready' && pendingPositionRestoreRef.current) {
+          const restore = pendingPositionRestoreRef.current;
+          pendingPositionRestoreRef.current = null;
+          setTimeout(() => {
+            webViewRef.current?.injectJavaScript(
+              `window.__readerBridge && window.__readerBridge.scrollToChapterWithProgress(${restore.chapterIndex}, ${restore.progress}); true;`
+            );
+          }, 50);
         }
 
         // When the bridge reports initial page info, jump to requested page (no animation)
@@ -325,7 +382,7 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
             }
           } else if (initialChapterProgressRef.current != null && initialChapterProgressRef.current > 0) {
             // Restore from chapterProgress (works across mode switches)
-            const page = Math.round(initialChapterProgressRef.current * (data.totalPages - 1));
+            const page = Math.floor(initialChapterProgressRef.current * (data.totalPages - 1));
             initialChapterProgressRef.current = undefined;
             initialPageRef.current = undefined;
             if (page > 0) {
@@ -350,9 +407,14 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
     [onMessage, onCenterTap]
   );
 
+  const handleLoadStart = useCallback(() => {
+    initialLoadCompleteRef.current = false;
+  }, []);
+
   // Lightweight onLoadEnd: bridge is injected via the injectedJavaScript prop,
   // so we only notify the parent that the WebView is ready.
   const handleLoadEnd = useCallback(() => {
+    initialLoadCompleteRef.current = true;
     onMessage({ type: 'ready' });
   }, [onMessage]);
 
@@ -382,8 +444,15 @@ const EpubReader = forwardRef<EpubReaderHandle, EpubReaderProps>(function EpubRe
         bounces={false}
         overScrollMode="never"
         onMessage={handleWebViewMessage}
+        onLoadStart={handleLoadStart}
         onLoadEnd={handleLoadEnd}
         onShouldStartLoadWithRequest={(request) => {
+          // LINK NAV: After the initial HTML load, block all navigations.
+          // In-book links are intercepted by the bridge JS click handler and
+          // routed through React Native's chapter loader instead.
+          if (initialLoadCompleteRef.current) {
+            return false;
+          }
           return request.url.startsWith('file://') || request.url === 'about:blank';
         }}
       />

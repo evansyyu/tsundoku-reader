@@ -2,11 +2,20 @@
  * SQLite database layer for books and bookmarks.
  *
  * Uses expo-sqlite's new synchronous API (SDK 54+).
+ *
+ * Path strategy: the database stores paths RELATIVE to documentDirectory
+ * (e.g. "books/{id}/OEBPS/"). On read, rowToBook() resolves them to
+ * absolute paths using the current documentDirectory, so books survive
+ * iOS container UUID changes (TestFlight updates, etc.).
  */
 
 import * as SQLite from 'expo-sqlite';
+// TODO: migrate to expo-file-system (non-legacy) when upgrading to SDK 55+
+import * as FileSystem from 'expo-file-system/legacy';
 import type { Book, BookRow } from '@/types/book';
 import type { BookmarkData } from '@/types/reader';
+
+const DOC_DIR = FileSystem.documentDirectory ?? '';
 
 let db: SQLite.SQLiteDatabase | null = null;
 
@@ -74,6 +83,29 @@ export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
     // Column already exists
   }
 
+  // Migration: convert absolute paths to relative paths so books survive
+  // iOS container UUID changes across TestFlight / App Store updates.
+  // Only touches rows that still have absolute paths (starting with '/').
+  await db.execAsync(`
+    UPDATE books SET
+      file_path = CASE
+        WHEN INSTR(file_path, 'books/') > 0
+        THEN SUBSTR(file_path, INSTR(file_path, 'books/'))
+        ELSE file_path
+      END,
+      epub_path = CASE
+        WHEN INSTR(epub_path, 'epubs/') > 0
+        THEN SUBSTR(epub_path, INSTR(epub_path, 'epubs/'))
+        ELSE epub_path
+      END,
+      cover_path = CASE
+        WHEN cover_path IS NOT NULL AND INSTR(cover_path, 'books/') > 0
+        THEN SUBSTR(cover_path, INSTR(cover_path, 'books/'))
+        ELSE cover_path
+      END
+    WHERE file_path LIKE '/%'
+  `);
+
   return db;
 }
 
@@ -91,6 +123,7 @@ export function getDatabase(): SQLite.SQLiteDatabase {
 
 /**
  * Insert a new book into the database.
+ * Paths are stored relative to documentDirectory for portability.
  */
 export async function insertBook(book: Book): Promise<void> {
   const database = getDatabase();
@@ -101,9 +134,9 @@ export async function insertBook(book: Book): Promise<void> {
       book.id,
       book.title,
       book.author,
-      book.coverPath,
-      book.filePath,
-      book.epubPath,
+      toRelativePath(book.coverPath),
+      toRelativePath(book.filePath) ?? book.filePath,
+      toRelativePath(book.epubPath) ?? book.epubPath,
       book.originalFileName,
       book.language,
       JSON.stringify(book.spine),
@@ -238,19 +271,42 @@ export async function getReadingProgress(
   };
 }
 
-// ──── Helpers ────────────────────────────────────────────────
+// ──── Path helpers ───────────────────────────────────────────
+// DB stores paths relative to documentDirectory (e.g. "books/{id}/OEBPS/").
+// At runtime we resolve them to absolute paths so all consumers (WebView,
+// Image source, FileSystem APIs) get usable URIs regardless of whether the
+// iOS container UUID changed since the book was imported.
+
+/** Strip documentDirectory prefix to get a portable relative path. */
+function toRelativePath(absPath: string | null): string | null {
+  if (!absPath) return null;
+  if (DOC_DIR && absPath.startsWith(DOC_DIR)) {
+    return absPath.slice(DOC_DIR.length);
+  }
+  return absPath;
+}
+
+/** Resolve a stored (possibly relative) path to an absolute path. */
+function toAbsolutePath(storedPath: string | null): string | null {
+  if (!storedPath) return null;
+  if (storedPath.startsWith('/')) return storedPath;
+  return `${DOC_DIR}${storedPath}`;
+}
+
+// ──── Row mapping ───────────────────────────────────────────
 
 /**
  * Convert a database row to a Book object.
+ * Resolves stored relative paths to absolute paths.
  */
 function rowToBook(row: BookRow): Book {
   return {
     id: row.id,
     title: row.title,
     author: row.author ?? 'Unknown Author',
-    coverPath: row.cover_path,
-    filePath: row.file_path,
-    epubPath: row.epub_path,
+    coverPath: toAbsolutePath(row.cover_path),
+    filePath: toAbsolutePath(row.file_path) ?? row.file_path,
+    epubPath: toAbsolutePath(row.epub_path) ?? row.epub_path,
     originalFileName: row.original_file_name ?? '',
     language: row.language,
     spine: JSON.parse(row.spine),

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, BackHandler, Platform, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { useKeepAwake } from 'expo-keep-awake';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useBooks } from '@/contexts/BooksContext';
@@ -20,7 +21,29 @@ import type { ReaderLocation, WebViewToRNMessage } from '@/types/reader';
 /** MMKV key for the book currently open in the reader. */
 export const ACTIVE_BOOK_KEY = 'active_reader_book_id';
 
+/**
+ * Resolve a relative path against a base directory.
+ * e.g. resolveRelativePath("OEBPS/Text/", "../chapter2.xhtml") → "OEBPS/chapter2.xhtml"
+ */
+function resolveRelativePath(baseDir: string, relativePath: string): string {
+  // Strip "./" prefix
+  let rel = relativePath.replace(/^\.\//, '');
+  const parts = baseDir.split('/').filter(Boolean);
+
+  for (const segment of rel.split('/')) {
+    if (segment === '..') {
+      parts.pop();
+    } else if (segment !== '.' && segment !== '') {
+      parts.push(segment);
+    }
+  }
+
+  return parts.join('/');
+}
+
 export default function ReaderScreen() {
+  useKeepAwake();
+
   const { id } = useLocalSearchParams<{ id: string }>();
   const { getBook, updateLastRead, saveReadingProgress, removeBook } = useBooks();
   const { settings, getReadingTheme } = useSettings();
@@ -64,13 +87,95 @@ export default function ReaderScreen() {
     }
   }, [id, updateLastRead]);
 
-  // Save progress whenever page, chapter, or chapter progress changes
+  // ── Autosave infrastructure ──
   const saveProgressRef = useRef(saveReadingProgress);
   saveProgressRef.current = saveReadingProgress;
+  const currentLocationRef = useRef(currentLocation);
+  currentLocationRef.current = currentLocation;
+
+  // Track last saved position to skip redundant writes
+  const lastSavedRef = useRef<{ chapterIndex: number; pageNumber: number; chapterProgress: number } | null>(null);
+
+  // Ref-based throttle (2s) and debounce (800ms) timers
+  const throttleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSaveTimeRef = useRef(0);
+
+  const SAVE_THROTTLE_MS = 2000;
+  const SAVE_DEBOUNCE_MS = 800;
+
+  /** Core save function with redundant-write guard. */
+  const doSave = useCallback(() => {
+    if (!id || !isReady) return;
+    const loc = currentLocationRef.current;
+    const last = lastSavedRef.current;
+    // Skip if position hasn't changed since last save
+    if (
+      last &&
+      last.chapterIndex === loc.chapterIndex &&
+      last.pageNumber === loc.pageNumber &&
+      last.chapterProgress === loc.chapterProgress
+    ) {
+      return;
+    }
+    lastSavedRef.current = {
+      chapterIndex: loc.chapterIndex,
+      pageNumber: loc.pageNumber,
+      chapterProgress: loc.chapterProgress,
+    };
+    lastSaveTimeRef.current = Date.now();
+    saveProgressRef.current(id, loc.chapterIndex, loc.pageNumber, loc.chapterProgress);
+  }, [id, isReady]);
+
+  // AUTOSAVE: Throttled save on every location change.
+  // Paginated mode: triggers on each page turn (infrequent, so throttle rarely kicks in).
+  // Continuous mode: throttled to at most once per 2s during active scrolling.
+  // Additionally debounces 800ms after the last change to catch the "scroll stop" moment.
   useEffect(() => {
     if (!id || !isReady) return;
-    saveProgressRef.current(id, currentLocation.chapterIndex, currentLocation.pageNumber, currentLocation.chapterProgress);
-  }, [id, isReady, currentLocation.chapterIndex, currentLocation.pageNumber, currentLocation.chapterProgress]);
+
+    const now = Date.now();
+    const elapsed = now - lastSaveTimeRef.current;
+
+    if (elapsed >= SAVE_THROTTLE_MS) {
+      // Enough time has passed — save immediately
+      doSave();
+    } else if (!throttleTimerRef.current) {
+      // Schedule a throttled save for when the window opens
+      throttleTimerRef.current = setTimeout(() => {
+        throttleTimerRef.current = null;
+        doSave();
+      }, SAVE_THROTTLE_MS - elapsed);
+    }
+
+    // Debounce: save 800ms after the last change (scroll-stop save)
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      debounceTimerRef.current = null;
+      doSave();
+    }, SAVE_DEBOUNCE_MS);
+
+    return () => {
+      // Clean up pending timers on dependency change (not on unmount — unmount handled below)
+    };
+  }, [id, isReady, currentLocation.chapterIndex, currentLocation.pageNumber, currentLocation.chapterProgress, doSave]);
+
+  // AUTOSAVE: Save on reader unmount (user exits reader).
+  // Note: ACTIVE_BOOK_KEY is intentionally NOT deleted here so that
+  // auto-resume works when the OS kills the app while the user is reading.
+  // The key is only deleted on explicit user exits (handleBack, Android back).
+  useEffect(() => {
+    return () => {
+      // Clear pending throttle/debounce timers
+      if (throttleTimerRef.current) { clearTimeout(throttleTimerRef.current); throttleTimerRef.current = null; }
+      if (debounceTimerRef.current) { clearTimeout(debounceTimerRef.current); debounceTimerRef.current = null; }
+      // Flush final save
+      const loc = currentLocationRef.current;
+      if (id) {
+        saveProgressRef.current(id, loc.chapterIndex, loc.pageNumber, loc.chapterProgress);
+      }
+    };
+  }, [id]);
 
   // ANDROID_VERIFIED: BackHandler intercepts the hardware back button on Android
   // so that progress is saved and the active-reader key is cleared before exiting.
@@ -85,20 +190,28 @@ export default function ReaderScreen() {
     return () => handler.remove();
   }, [router]);
 
-  // ANDROID_VERIFIED: AppState listener saves progress when the app goes to
-  // background. On Android the OS may kill the process without unmounting
-  // components, so relying on useEffect cleanup alone is insufficient.
-  const currentLocationRef = useRef(currentLocation);
-  currentLocationRef.current = currentLocation;
+  // AUTOSAVE: AppState listener saves progress when the app goes to background.
+  // On Android the OS may kill the process without unmounting components,
+  // so relying on useEffect cleanup alone is insufficient. Uses synchronous
+  // MMKV for the position data so the write completes before the OS suspends.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'background' && id && isReady) {
-        const loc = currentLocationRef.current;
-        saveProgressRef.current(id, loc.chapterIndex, loc.pageNumber, loc.chapterProgress);
+        doSave();
       }
     });
     return () => sub.remove();
-  }, [id, isReady]);
+  }, [id, isReady, doSave]);
+
+  // Safety timeout: if the reader hasn't become ready within 1 second of the spinner
+  // showing, force-clear it. Prevents permanent spinners from edge-case bridge failures.
+  useEffect(() => {
+    if (isReady) return;
+    const timeout = setTimeout(() => {
+      setIsReady(true);
+    }, 1_000);
+    return () => clearTimeout(timeout);
+  }, [isReady]);
 
   // Keep a ref to settings so handleMessage can check viewMode without depending on it
   const settingsRef = useRef(settings);
@@ -113,7 +226,6 @@ export default function ReaderScreen() {
         case 'pageInfo':
         case 'pageChange':
           setCurrentLocation((prev) => {
-            // Record this chapter's page count for book-wide progress
             chapterPageCountsRef.current.set(prev.chapterIndex, message.totalPages);
             return {
               ...prev,
@@ -127,44 +239,33 @@ export default function ReaderScreen() {
           setTotalPages(message.totalPages);
           break;
         case 'chapterEnd': {
-          // In continuous mode (all chapters loaded), chapterEnd is not fired.
-          // This only fires in paginated mode.
           const spineLen = bookRef.current?.spine.length ?? 0;
-          setCurrentLocation((prev) => {
-            if (prev.chapterIndex < spineLen - 1) {
-              return {
-                ...prev,
-                chapterIndex: prev.chapterIndex + 1,
-                pageNumber: 0,
-                chapterProgress: 0,
-              };
-            }
-            return prev;
-          });
+          // At end of book — nothing to navigate to
+          if (currentLocationRef.current.chapterIndex >= spineLen - 1) break;
+          setCurrentLocation((prev) => ({
+            ...prev,
+            chapterIndex: prev.chapterIndex + 1,
+            pageNumber: 0,
+            chapterProgress: 0,
+          }));
           setIsReady(false);
           setStartAtEnd(false);
           break;
         }
         case 'chapterStart': {
-          // Only fires in paginated mode.
-          setCurrentLocation((prev) => {
-            if (prev.chapterIndex > 0) {
-              return {
-                ...prev,
-                chapterIndex: prev.chapterIndex - 1,
-                pageNumber: 0,
-                chapterProgress: 1,
-              };
-            }
-            return prev;
-          });
+          // At start of book — nothing to navigate to
+          if (currentLocationRef.current.chapterIndex <= 0) break;
+          setCurrentLocation((prev) => ({
+            ...prev,
+            chapterIndex: prev.chapterIndex - 1,
+            pageNumber: 0,
+            chapterProgress: 1,
+          }));
           setIsReady(false);
           setStartAtEnd(true);
           break;
         }
         case 'chapterIndexUpdate':
-          // Continuous mode: bridge reports which chapter section is visible
-          // along with intra-chapter progress (0.0-1.0).
           setCurrentLocation((prev) => {
             if (prev.chapterIndex === message.chapterIndex && prev.chapterProgress === message.chapterProgress) return prev;
             return {
@@ -175,7 +276,6 @@ export default function ReaderScreen() {
           });
           break;
         case 'scrollProgress':
-          // Continuous mode: bridge reports virtual page from scroll position.
           setCurrentLocation((prev) => ({
             ...prev,
             pageNumber: message.currentPage,
@@ -184,6 +284,10 @@ export default function ReaderScreen() {
           break;
         case 'dictionaryLookup':
           handleDictionaryLookup(message.text, message.offset);
+          break;
+        case 'linkTap':
+          // LINK NAV: In-book link tapped. Map href to spine item and navigate.
+          handleLinkTap((message as { type: string; href: string }).href);
           break;
         case 'error':
           if (
@@ -314,17 +418,56 @@ export default function ReaderScreen() {
         return { ...prev, chapterIndex: index, chapterProgress: 0 };
       });
     } else {
-      // Paginated mode: trigger full reload
+      // Paginated mode: trigger full reload — but only show spinner when
+      // the chapter actually changes. Navigating to the same chapter (e.g.
+      // a link pointing at the current chapter) must not set isReady=false,
+      // because no new HTML load will fire to clear it.
+      const changing = currentLocationRef.current.chapterIndex !== index;
       setCurrentLocation((prev) => {
         if (index === prev.chapterIndex) return prev;
         return { ...prev, chapterIndex: index, pageNumber: 0, chapterProgress: 0 };
       });
-      setIsReady(false);
-      setStartAtEnd(false);
+      if (changing) {
+        setIsReady(false);
+        setStartAtEnd(false);
+      }
     }
 
     setControlsVisible(false);
   }, []);
+
+  // LINK NAV: Map an in-book link href to a spine item index and navigate.
+  // Uses the same path as TOC chapter selection so all settings are re-applied.
+  // Uses bookRef to avoid stale closure (handleMessage has [] deps).
+  const handleLinkTap = useCallback(
+    (href: string) => {
+      const currentBook = bookRef.current;
+      if (!currentBook) return;
+
+      // Normalize: strip leading "./" and resolve against current chapter's directory
+      const currentSpineItem = currentBook.spine[currentLocationRef.current.chapterIndex];
+      const currentDir = currentSpineItem
+        ? currentSpineItem.href.substring(0, currentSpineItem.href.lastIndexOf('/') + 1)
+        : '';
+
+      // LINK NAV: Resolve the relative href against the current chapter's directory
+      const resolvedHref = resolveRelativePath(currentDir, href);
+
+      // Find the matching spine item by comparing href suffixes
+      const targetIndex = currentBook.spine.findIndex((item) => {
+        if (item.href === resolvedHref) return true;
+        if (item.href.endsWith('/' + resolvedHref) || resolvedHref.endsWith('/' + item.href)) return true;
+        const itemFile = item.href.substring(item.href.lastIndexOf('/') + 1);
+        const linkFile = resolvedHref.substring(resolvedHref.lastIndexOf('/') + 1);
+        return itemFile === linkFile && itemFile.length > 0;
+      });
+
+      if (targetIndex >= 0) {
+        handleSelectChapter(targetIndex);
+      }
+    },
+    [handleSelectChapter]
+  );
 
   // Register the chapter selection handler so the chapters modal route can call it
   useEffect(() => {
@@ -410,6 +553,7 @@ export default function ReaderScreen() {
           startAtEnd={startAtEnd}
           initialPage={book.lastPageNumber}
           initialChapterProgress={book.lastChapterProgress}
+          currentChapterProgress={currentLocation.chapterProgress}
           onMessage={handleMessage}
           onCenterTap={handleCenterTap}
         />

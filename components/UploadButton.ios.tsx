@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
@@ -24,8 +24,10 @@ export default function UploadButton() {
     await importBook();
   };
 
-  // Position above the native tab bar: safe area bottom + tab bar height (~49pt) + margin
-  const bottomOffset = insets.bottom + 49 + 16;
+  // iPads have no tab bar home indicator; use a simple fixed offset.
+  // iPhones: position above the native tab bar (safe area + ~49pt bar + margin).
+  const isPad = (Platform as unknown as { isPad?: boolean }).isPad ?? false;
+  const bottomOffset = isPad ? 20 : insets.bottom + 49 + 16;
 
   return (
     <>

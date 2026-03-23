@@ -30,11 +30,11 @@ export interface Book {
   id: string;
   title: string;
   author: string;
-  /** Absolute path to extracted cover image on disk */
+  /** Runtime-resolved absolute path to extracted cover image on disk (stored relative in DB) */
   coverPath: string | null;
-  /** Absolute path to the unzipped book directory */
+  /** Runtime-resolved absolute path to the unzipped book directory (stored relative in DB) */
   filePath: string;
-  /** Absolute path to the original .epub file */
+  /** Runtime-resolved absolute path to the original .epub file (stored relative in DB) */
   epubPath: string;
   /** Original file name from the device (used for duplicate detection) */
   originalFileName: string;

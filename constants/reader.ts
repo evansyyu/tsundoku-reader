@@ -271,33 +271,11 @@ export const READER_BRIDGE_JS = `
 (function() {
   'use strict';
 
-  // Diagnostic: forward WebView console to RN so logs appear in Metro
-  var _origLog = console.log;
-  var _origErr = console.error;
-  console.log = function() {
-    _origLog.apply(console, arguments);
-    try {
-      window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
-        type: 'console', level: 'log', msg: Array.prototype.slice.call(arguments).join(' ')
-      }));
-    } catch(e) {}
-  };
-  console.error = function() {
-    _origErr.apply(console, arguments);
-    try {
-      window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
-        type: 'console', level: 'error', msg: Array.prototype.slice.call(arguments).join(' ')
-      }));
-    } catch(e) {}
-  };
-
   let isVertical = false;
   // Replaced at runtime via String.replace() in EpubReader
   let isPaginated = __PAGINATED__;
   let blurImages = __BLUR_IMAGES__;
   let initDictEnabled = __DICT_ENABLED__;
-  let pendingScrollChapter = __PENDING_SCROLL_CHAPTER__;
-  let pendingScrollProgress = __PENDING_SCROLL_PROGRESS__;
   let currentPage = 0;
   let totalPages = 1;
   let pagePitch = 0; // horizontal distance between consecutive pages
@@ -439,6 +417,7 @@ export const READER_BRIDGE_JS = `
 
   function nextPage() {
     if (currentPage >= totalPages - 1) {
+      releaseTurnLock();
       sendMessage({ type: 'chapterEnd' });
       return;
     }
@@ -447,6 +426,7 @@ export const READER_BRIDGE_JS = `
 
   function prevPage() {
     if (currentPage <= 0) {
+      releaseTurnLock();
       sendMessage({ type: 'chapterStart' });
       return;
     }
@@ -483,16 +463,134 @@ export const READER_BRIDGE_JS = `
 
   /**
    * Apply typography settings dynamically.
+   * In continuous mode, captures and restores scroll position around the
+   * re-layout so the user doesn't lose their place.
    */
   function setTypography(fontSize, lineHeight, fontFamily) {
+    // ROOT CAUSE: CSS variable changes trigger full re-layout in the WebView
+    // engine. In continuous mode this resets scrollTop/scrollLeft to 0.
+    // We capture the position of the element at viewport center before the
+    // change and restore it after the layout settles.
+    var restoreInfo = null;
+    if (!isPaginated) {
+      restoreInfo = captureScrollPosition();
+    }
+
     document.documentElement.style.setProperty('--font-size', fontSize + 'px');
     document.documentElement.style.setProperty('--line-height', String(lineHeight));
     document.documentElement.style.setProperty('--font-family', fontFamily);
-    // Recalculate pages since font change affects layout
+
     requestAnimationFrame(function() {
-      calculatePages();
-      goToPage(currentPage);
+      if (isPaginated) {
+        calculatePages();
+        goToPage(currentPage);
+      } else if (restoreInfo) {
+        restoreScrollPosition(restoreInfo);
+      }
     });
+  }
+
+  /**
+   * Apply page margin dynamically.
+   */
+  function setPageMargin(margin) {
+    var restoreInfo = null;
+    if (!isPaginated) {
+      restoreInfo = captureScrollPosition();
+    }
+
+    document.documentElement.style.setProperty('--page-margin', margin + 'px');
+
+    requestAnimationFrame(function() {
+      if (isPaginated) {
+        calculatePages();
+        goToPage(currentPage);
+      } else if (restoreInfo) {
+        restoreScrollPosition(restoreInfo);
+      }
+    });
+  }
+
+  /**
+   * Toggle furigana visibility via CSS without full HTML rebuild.
+   */
+  function setFurigana(show) {
+    var restoreInfo = null;
+    if (!isPaginated) {
+      restoreInfo = captureScrollPosition();
+    }
+
+    var rts = document.querySelectorAll('rt');
+    var rps = document.querySelectorAll('rp');
+    var display = show ? '' : 'none';
+    for (var i = 0; i < rts.length; i++) rts[i].style.display = display;
+    for (var j = 0; j < rps.length; j++) rps[j].style.display = display;
+
+    requestAnimationFrame(function() {
+      if (isPaginated) {
+        calculatePages();
+        goToPage(currentPage);
+      } else if (restoreInfo) {
+        restoreScrollPosition(restoreInfo);
+      }
+    });
+  }
+
+  // ── Position capture/restore for settings changes (continuous mode) ──
+  /**
+   * Capture the element at the center of the viewport and its fractional
+   * offset, so we can restore the scroll position after a re-layout.
+   */
+  function captureScrollPosition() {
+    var scrollEl = document.scrollingElement || document.documentElement;
+    var vpCenterX = window.innerWidth / 2;
+    var vpCenterY = window.innerHeight / 2;
+
+    // Find the chapter section at center
+    var sections = document.querySelectorAll('.chapter-section[data-chapter]');
+    var bestIdx = 0;
+    var bestSection = sections.length > 0 ? sections[0] : null;
+    var bestDist = Infinity;
+
+    for (var i = 0; i < sections.length; i++) {
+      var rect = sections[i].getBoundingClientRect();
+      var cX = (rect.left + rect.right) / 2;
+      var cY = (rect.top + rect.bottom) / 2;
+      var d = Math.abs(cX - vpCenterX) + Math.abs(cY - vpCenterY);
+      if (d < bestDist) {
+        bestDist = d;
+        bestIdx = parseInt(sections[i].getAttribute('data-chapter')) || 0;
+        bestSection = sections[i];
+      }
+    }
+
+    if (!bestSection) {
+      return { scrollTop: scrollEl.scrollTop, scrollLeft: scrollEl.scrollLeft, mode: 'raw' };
+    }
+
+    // Fractional position within this chapter section
+    var r = bestSection.getBoundingClientRect();
+    var progress;
+    if (isVertical) {
+      progress = r.width > 0 ? Math.max(0, Math.min(1, (r.right - window.innerWidth) / r.width)) : 0;
+    } else {
+      progress = r.height > 0 ? Math.max(0, Math.min(1, -r.top / r.height)) : 0;
+    }
+
+    return { chapterIndex: bestIdx, progress: progress, mode: 'chapter' };
+  }
+
+  /**
+   * Restore scroll position from a previously captured snapshot.
+   */
+  function restoreScrollPosition(info) {
+    if (info.mode === 'chapter') {
+      scrollToChapterWithProgress(info.chapterIndex, info.progress);
+    } else {
+      var scrollEl = document.scrollingElement || document.documentElement;
+      scrollEl.scrollTop = info.scrollTop;
+      scrollEl.scrollLeft = info.scrollLeft;
+    }
   }
 
   // ── Dictionary: text extraction at touch point ──────────────
@@ -702,47 +800,87 @@ export const READER_BRIDGE_JS = `
   // Swipe detection state (no live drag — avoids WebKit column glitches)
   var swipeHandled = false;
   var SWIPE_THRESHOLD = 30; // px horizontal to commit a page turn
+  var SWIPE_MAX_DURATION_MS = 600; // reject gestures longer than this (holds, not swipes)
+
+  // Page-turn lock: prevents a single gesture from dispatching multiple turns,
+  // and prevents rapid successive swipes from causing oscillation.
+  var isTurning = false;
+  var isTurningTimer = null;
+  var turnLockSafetyTimer = null;
+  var TURN_LOCK_MS = 400; // settle time after a page turn
+  var TURN_LOCK_SAFETY_MS = 1500; // hard ceiling so lock never gets permanently stuck
+
+  // Track the primary touch to prevent multi-touch confusion
+  var activeTouchId = null;
+  var swipeStartTime = 0;
+
+  function acquireTurnLock() {
+    isTurning = true;
+    if (isTurningTimer) clearTimeout(isTurningTimer);
+    if (turnLockSafetyTimer) clearTimeout(turnLockSafetyTimer);
+    isTurningTimer = setTimeout(releaseTurnLock, TURN_LOCK_MS);
+    turnLockSafetyTimer = setTimeout(releaseTurnLock, TURN_LOCK_SAFETY_MS);
+  }
+
+  function releaseTurnLock() {
+    isTurning = false;
+    if (isTurningTimer) { clearTimeout(isTurningTimer); isTurningTimer = null; }
+    if (turnLockSafetyTimer) { clearTimeout(turnLockSafetyTimer); turnLockSafetyTimer = null; }
+  }
 
   // Prevent native scrolling in paginated mode
   document.addEventListener('touchmove', function(e) {
     if (isPaginated) e.preventDefault();
   }, { passive: false });
 
-  // Touch start: record position for swipe detection and click movement check
+  // Touch start: record the primary finger for swipe detection
   document.addEventListener('touchstart', function(e) {
+    // Ignore multi-touch — only the first finger drives the swipe
+    if (e.touches.length > 1) { activeTouchId = null; return; }
+
     var touch = e.touches[0];
     if (!touch) return;
 
+    activeTouchId = touch.identifier;
     touchStartX = touch.clientX;
     touchStartY = touch.clientY;
+    swipeStartTime = Date.now();
   }, { passive: true });
 
-  // Touch end: detect swipe for paginated navigation
+  // Touch end: detect swipe for paginated navigation.
+  // Only processes the same finger that started the gesture.
+  // Rejects multi-touch and long-press gestures.
   document.addEventListener('touchend', function(e) {
-    if (isPaginated && e.changedTouches.length > 0) {
-      var touch = e.changedTouches[0];
-      var dx = touch.clientX - touchStartX;
-      var dy = touch.clientY - touchStartY;
+    if (!isPaginated || isTurning || activeTouchId === null) {
+      activeTouchId = null;
+      return;
+    }
 
-      // Only count as swipe if horizontal movement dominates and exceeds threshold
-      if (Math.abs(dx) >= SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy)) {
-        swipeHandled = true;
+    // Find the touch matching the tracked finger
+    var touch = null;
+    for (var i = 0; i < e.changedTouches.length; i++) {
+      if (e.changedTouches[i].identifier === activeTouchId) {
+        touch = e.changedTouches[i];
+        break;
+      }
+    }
+    activeTouchId = null;
+    if (!touch) return;
 
-        if (isVertical) {
-          // Vertical RTL reading: swipe right → next, swipe left → prev
-          if (dx > 0) {
-            nextPage();
-          } else {
-            prevPage();
-          }
-        } else {
-          // Horizontal LTR reading: swipe left → next, swipe right → prev
-          if (dx < 0) {
-            nextPage();
-          } else {
-            prevPage();
-          }
-        }
+    // Reject long gestures (likely a hold/drag, not a swipe)
+    if (Date.now() - swipeStartTime > SWIPE_MAX_DURATION_MS) return;
+
+    var dx = touch.clientX - touchStartX;
+    var dy = touch.clientY - touchStartY;
+
+    if (Math.abs(dx) >= SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy)) {
+      swipeHandled = true;
+      acquireTurnLock();
+
+      if (isVertical) {
+        if (dx > 0) { nextPage(); } else { prevPage(); }
+      } else {
+        if (dx < 0) { nextPage(); } else { prevPage(); }
       }
     }
   }, { passive: true });
@@ -815,6 +953,46 @@ export const READER_BRIDGE_JS = `
       sendMessage({ type: 'centerTap' });
     }
   });
+
+  // ── LINK NAV: Intercept internal book links ──────────────────
+  // Prevent native WebView navigation for in-book links. Instead, extract the
+  // resolved href and send it to React Native so the chapter can be loaded with
+  // proper CSS/JS injection. Fragment-only links (#id) are left as default
+  // browser behavior (scroll within the same page).
+  document.addEventListener('click', function(e) {
+    var target = e.target;
+    // Walk up to find the nearest <a> ancestor
+    while (target && target !== document.body) {
+      if (target.nodeName === 'A') break;
+      target = target.parentNode;
+    }
+    if (!target || target.nodeName !== 'A') return;
+
+    var href = target.getAttribute('href');
+    if (!href) return;
+
+    // Skip fragment-only links (same-page anchors)
+    if (href.charAt(0) === '#') return;
+
+    // Skip external URLs
+    if (/^(?:https?:|mailto:|tel:)/i.test(href)) {
+      e.preventDefault();
+      return;
+    }
+
+    // LINK NAV: Internal book link — prevent native navigation and route through RN
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Strip any fragment part and resolve the path
+    var hashIdx = href.indexOf('#');
+    var pathPart = hashIdx >= 0 ? href.substring(0, hashIdx) : href;
+
+    sendMessage({
+      type: 'linkTap',
+      href: pathPart,
+    });
+  }, true); // useCapture=true to intercept before other click handlers
 
   // ── Continuous scroll: progress & chapter detection ──────────
   // All chapters are loaded at once in continuous mode.
@@ -1028,6 +1206,12 @@ export const READER_BRIDGE_JS = `
         case 'setDictionaryEnabled':
           setDictionaryEnabled(cmd.enabled);
           break;
+        case 'setPageMargin':
+          setPageMargin(cmd.margin);
+          break;
+        case 'setFurigana':
+          setFurigana(cmd.show);
+          break;
         case 'scrollToChapter':
           scrollToChapter(cmd.chapterIndex, cmd.smooth);
           break;
@@ -1215,31 +1399,65 @@ export const READER_BRIDGE_JS = `
    * Wait for all images to load, then recalculate pages.
    * This is critical because images change content dimensions.
    */
+  var IMAGE_LOAD_TIMEOUT_MS = 5000;
+
   function watchImages() {
     var imgs = document.querySelectorAll('img');
-    if (imgs.length === 0) {
+    var svgImages = document.querySelectorAll('svg image');
+
+    var totalToWatch = imgs.length + svgImages.length;
+    if (totalToWatch === 0) {
       imagesLoaded = true;
       return;
     }
-    var remaining = imgs.length;
+
+    var remaining = totalToWatch;
+    var settled = false;
+    var fallbackTimer = null;
+
+    function settle() {
+      if (settled) return;
+      settled = true;
+      imagesLoaded = true;
+      if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; }
+      requestAnimationFrame(function() {
+        calculatePages();
+        sendPageInfo();
+      });
+    }
+
     function onImgReady() {
       remaining--;
-      if (remaining <= 0) {
-        imagesLoaded = true;
-        requestAnimationFrame(function() {
-          calculatePages();
-          sendPageInfo();
-        });
-      }
+      if (remaining <= 0) settle();
     }
+
     for (var i = 0; i < imgs.length; i++) {
       if (imgs[i].complete) {
         onImgReady();
       } else {
-        imgs[i].addEventListener('load', onImgReady);
-        imgs[i].addEventListener('error', onImgReady);
+        (function(img) {
+          img.addEventListener('load', function() { onImgReady(); });
+          img.addEventListener('error', function() { onImgReady(); });
+        })(imgs[i]);
       }
     }
+
+    // Track <svg><image> elements via Image() decode probe
+    for (var j = 0; j < svgImages.length; j++) {
+      (function(svgImg) {
+        var href = svgImg.getAttribute('xlink:href') || svgImg.getAttribute('href') || '';
+        if (!href) { onImgReady(); return; }
+        var probe = new Image();
+        probe.onload = function() { onImgReady(); };
+        probe.onerror = function() { onImgReady(); };
+        probe.src = href;
+      })(svgImages[j]);
+    }
+
+    // Safety fallback: if images take too long, settle anyway so pagination works
+    fallbackTimer = setTimeout(function() {
+      if (!settled) settle();
+    }, IMAGE_LOAD_TIMEOUT_MS);
   }
 
   /**
@@ -1258,14 +1476,12 @@ export const READER_BRIDGE_JS = `
       if (!isPaginated) {
         var scrollEl = document.scrollingElement || document.documentElement;
         if (isVertical) {
-          // vertical-rl: reading starts at scrollLeft = 0 (rightmost position)
           scrollEl.scrollLeft = 0;
         } else {
           scrollEl.scrollTop = 0;
         }
       }
 
-      // Enable dictionary at init if requested (eliminates post-init round-trip)
       if (initDictEnabled) {
         dictEnabled = true;
       }
@@ -1273,19 +1489,10 @@ export const READER_BRIDGE_JS = `
       sendMessage({ type: 'ready' });
       sendPageInfo();
       watchImages();
-
-      // Scroll to saved position at init (eliminates post-init round-trip)
-      if (pendingScrollChapter >= 0) {
-        var _ch = pendingScrollChapter;
-        var _pr = pendingScrollProgress;
-        pendingScrollChapter = -1;
-        pendingScrollProgress = 0;
-        requestAnimationFrame(function() {
-          scrollToChapterWithProgress(_ch, _pr);
-        });
-      }
     } catch (err) {
-      // init failed
+      // Guarantee the ready signal even if init partially fails
+      sendMessage({ type: 'ready' });
+      sendPageInfo();
     }
   }
 
@@ -1310,6 +1517,8 @@ export const READER_BRIDGE_JS = `
     prevPage: prevPage,
     setTheme: setTheme,
     setTypography: setTypography,
+    setPageMargin: setPageMargin,
+    setFurigana: setFurigana,
     getPageInfo: sendPageInfo,
     getState: function() {
       return { currentPage: currentPage, totalPages: totalPages, isVertical: isVertical };

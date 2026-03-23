@@ -62,7 +62,9 @@ export type RNToWebViewCommand =
       length: number;
     }
   | { type: 'clearDictionaryHighlight' }
-  | { type: 'setDictionaryEnabled'; enabled: boolean };
+  | { type: 'setDictionaryEnabled'; enabled: boolean }
+  | { type: 'setPageMargin'; margin: number }
+  | { type: 'setFurigana'; show: boolean };
 
 export interface TOCItem {
   /** Title of the chapter/section */

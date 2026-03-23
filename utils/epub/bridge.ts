@@ -60,6 +60,12 @@ function buildCommandJS(command: RNToWebViewCommand): string {
     case 'setDictionaryEnabled':
       return `window.__readerBridge?.setDictionaryEnabled(${command.enabled}); true;`;
 
+    case 'setPageMargin':
+      return `window.__readerBridge?.setPageMargin(${command.margin}); true;`;
+
+    case 'setFurigana':
+      return `window.__readerBridge?.setFurigana(${command.show}); true;`;
+
     default:
       return 'true;';
   }
