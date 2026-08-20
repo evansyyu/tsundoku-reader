@@ -153,13 +153,13 @@ export default function SettingsScreen() {
           <Section title="About">
             <Button
               variant="borderless"
-              onPress={() => Linking.openURL('https://gadge.to/tsundoku/changelog')}
+              onPress={() => Linking.openURL('https://evansyu.com/tsundoku/changelog')}
             >
               Changelog
             </Button>
             <Button
               variant="borderless"
-              onPress={() => Linking.openURL('https://gadge.to/tsundoku/privacy')}
+              onPress={() => Linking.openURL('https://evansyu.com/tsundoku/privacy')}
             >
               Privacy Policy
             </Button>

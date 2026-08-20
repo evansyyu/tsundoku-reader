@@ -183,7 +183,7 @@ export default function SettingsScreen() {
           <Pressable
             className="flex-row items-center justify-between px-md py-3.5"
             style={{ borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}
-            onPress={() => Linking.openURL('https://gadge.to/tsundoku/changelog')}
+            onPress={() => Linking.openURL('https://evansyu.com/tsundoku/changelog')}
           >
             <Text className="text-base text-black dark:text-white">Changelog</Text>
             <Text className="text-base text-text-secondary dark:text-text-secondary-dark">›</Text>
@@ -193,7 +193,7 @@ export default function SettingsScreen() {
           <Pressable
             className="flex-row items-center justify-between px-md py-3.5"
             style={{ borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}
-            onPress={() => Linking.openURL('https://gadge.to/tsundoku/privacy')}
+            onPress={() => Linking.openURL('https://evansyu.com/tsundoku/privacy')}
           >
             <Text className="text-base text-black dark:text-white">Privacy Policy</Text>
             <Text className="text-base text-text-secondary dark:text-text-secondary-dark">›</Text>
