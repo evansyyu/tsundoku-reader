@@ -42,3 +42,7 @@ yarn-error.*
 
 # dictionaries (tracked via Git LFS)
 # assets/dictionary_tsundoku.db
+
+# editor and node-gyp output
+.cursor/
+build/
